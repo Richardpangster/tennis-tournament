@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>齐动力网球会员杯积分赛（端午站）</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="hero">
+  <h1>🎾 齐动力网球会员杯积分赛</h1>
+  <p>端午站 · 2026年6月19日 · 北京科技大学求实气膜网球馆</p>
+  <p style="margin-top:12px;font-size:0.9rem">U8/U10 上午 · U12/U14 下午</p>
+</div>
+
+<div class="category-grid">
+  {% for c in categories %}
+  <a href="/public/{{ c }}" class="category-card">
+    <h2>{{ c }}</h2>
+    <div class="meta">{{ counts[c] }} 人报名</div>
+    {% if counts[c] >= 16 %}<span class="badge badge-full">已满</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+<div style="text-align:center;padding:24px;color:#aaa;font-size:0.85rem">
+  <p>📱 扫码查看实时赛程与比分</p>
+  <p>数据每 30 秒自动刷新</p>
+</div>
+
+</body>
+</html>

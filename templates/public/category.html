@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ category }} — 齐动力网球会员杯</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <h1>🎾 {{ category }} 组</h1>
+  <div class="sub"><a href="/public" style="color:#fff;opacity:0.8">← 返回首页</a></div>
+</header>
+
+<div class="container" id="content">加载中…</div>
+<div class="auto-refresh">数据每 30 秒自动刷新 · <span id="timer">30</span>s</div>
+
+<script>
+const CAT = '{{ category }}';
+let countdown = 30;
+
+async function fetchData() {
+  try {
+    const [standings, matches] = await Promise.all([
+      fetch('/api/standings/'+CAT).then(r=>r.json()),
+      fetch('/api/matches/'+CAT).then(r=>r.json())
+    ]);
+    render(standings, matches);
+  } catch(e) {
+    document.getElementById('content').innerHTML = '<p style="color:#e74c3c">加载失败，请刷新</p>';
+  }
+}
+
+function render(standings, matches) {
+  const groupMatches = matches.filter(m => m.stage === 'group');
+  const koMatches = matches.filter(m => m.stage !== 'group');
+  const hasGroup = groupMatches.length > 0;
+  const hasKO = koMatches.length > 0;
+
+  let html = '';
+
+  // Group stage
+  if (hasGroup) {
+    html += '<div class="section-title">小组赛积分榜</div>';
+    html += '<div class="grid-2">';
+    for (const g of ['A','B','C','D']) {
+      const gs = standings[g] || [];
+      const gm = groupMatches.filter(m => m.group_name === g);
+      const done = gm.filter(m => m.status === 'completed').length;
+      html += `<div class="card"><h3>${g} 组 <span style="font-weight:400;font-size:0.8rem;color:#888">${done}/${gm.length}场</span></h3>`;
+
+      if (gs.length > 0) {
+        html += '<table><thead><tr><th>#</th><th>球员</th><th>胜</th><th>负</th><th>净胜</th></tr></thead><tbody>';
+        gs.forEach((s,i) => {
+          html += `<tr>
+            <td>${i+1}</td>
+            <td class="${i<2?'qualify':''}">${s.player_name}${i<2?' ↑':''}</td>
+            <td>${s.wins}</td><td>${s.losses}</td>
+            <td>${s.pd>0?'+':''}${s.pd}</td>
+          </tr>`;
+        });
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+
+    // Group match results
+    html += '<div class="section-title">小组赛比分</div>';
+    ['A','B','C','D'].forEach(g => {
+      const gm = groupMatches.filter(m => m.group_name === g);
+      html += `<div class="card"><h4>${g} 组</h4>`;
+      for (let r=1; r<=3; r++) {
+        const rm = gm.filter(m => m.round === r);
+        html += `<div style="margin-bottom:6px"><span style="font-size:0.8rem;color:#888">第${r}轮 </span>`;
+        rm.forEach(m => {
+          if (m.status === 'completed') {
+            let tb = (m.tb_score1 != null && m.tb_score2 != null) ? ` (抢七 ${m.tb_score1}-${m.tb_score2})` : '';
+            html += `<span style="margin-right:12px">${m.player1_name} <strong>${m.score1}-${m.score2}</strong>${tb} ${m.player2_name}</span>`;
+          } else {
+            html += `<span style="margin-right:12px;color:#ccc">${m.player1_name||'?'} vs ${m.player2_name||'?'}</span>`;
+          }
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+  }
+
+  // Knockout
+  if (hasKO) {
+    html += '<div class="section-title">🏆 淘汰赛</div>';
+    html += renderBracket(koMatches);
+  }
+
+  if (!hasGroup && !hasKO) {
+    html = '<div class="card" style="text-align:center;padding:40px;color:#999"><p>赛程尚未生成，请耐心等待</p></div>';
+  }
+
+  document.getElementById('content').innerHTML = html;
+}
+
+function renderBracket(matches) {
+  const byStage = {};
+  matches.forEach(m => { byStage[m.stage] = byStage[m.stage] || []; byStage[m.stage].push(m); });
+
+  let h = '<div class="card" style="overflow-x:auto"><table style="min-width:600px">';
+
+  h += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">8强</td>';
+  h += '<td colspan="2" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
+  h += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
+
+  const qfs = (byStage['quarterfinal']||[]).sort((a,b)=>a.match_order-b.match_order);
+  const QF_LABELS = {1:'A1 vs C2', 2:'B1 vs D2', 3:'C1 vs A2', 4:'D1 vs B2'};
+  for (let i = 0; i < 4; i++) {
+    h += '<tr>';
+    const label = QF_LABELS[qfs[i].match_order] || '';
+    h += `<td colspan="4" style="border-right:2px solid #ddd">${renderPublicKO(qfs[i], label)}</td>`;
+    // 上半区 SF1 (rows 0,1)
+    if (i < 2) {
+      const sf = (byStage['semifinal']||[]).find(m=>m.match_order===5);
+      if (i === 0) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf, '上半区'):'—'}</td>`;
+    }
+    // 下半区 SF2 (rows 2,3)
+    if (i >= 2) {
+      const sf = (byStage['semifinal']||[]).find(m=>m.match_order===6);
+      if (i === 2) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf, '下半区'):'—'}</td>`;
+    }
+    // 决赛 (spans all 4 rows)
+    if (i < 1) {
+      const fin = (byStage['final']||[])[0];
+      h += `<td rowspan="4" style="vertical-align:middle">${fin?renderPublicKO(fin):'—'}</td>`;
+    }
+    h += '</tr>';
+  }
+  h += '</table></div>';
+  return h;
+}
+
+function renderPublicKO(m, label) {
+  if (!m) return '<span style="color:#ccc">—</span>';
+  const p1 = m.player1_name || '<span style="color:#ccc">待定</span>';
+  const p2 = m.player2_name || '<span style="color:#ccc">待定</span>';
+  let s = '<div style="font-size:0.85rem;padding:4px 0">';
+  if (label) s += `<div style="font-size:0.7rem;color:#888;margin-bottom:2px">${label}</div>`;
+  s += `<div class="player${m.winner_id===m.player1_id?' winner':''}">${p1}</div>`;
+  s += `<div class="player${m.winner_id===m.player2_id?' winner':''}">${p2}</div>`;
+  if (m.status === 'completed') {
+    let scoreText = `${m.score1}-${m.score2}`;
+    if (m.tb_score1 != null && m.tb_score2 != null) {
+      scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
+    }
+    s += `<div style="color:#27ae60;font-weight:600;font-size:0.8rem">${scoreText}</div>`;
+  }
+  s += '</div>';
+  return s;
+}
+
+// Auto-refresh
+function startTimer() {
+  setInterval(() => {
+    countdown--;
+    document.getElementById('timer').textContent = countdown;
+    if (countdown <= 0) { countdown=30; fetchData(); }
+  }, 1000);
+}
+
+fetchData();
+startTimer();
+</script>
+</body>
+</html>

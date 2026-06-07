@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 — 齐动力网球会员杯</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  .login-box {
+    max-width: 360px;
+    margin: 80px auto;
+    padding: 32px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    text-align: center;
+  }
+  .login-box h2 { margin-bottom: 8px; }
+  .login-box .sub { color: #888; font-size: 0.85rem; margin-bottom: 24px; }
+  .login-box input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .login-box input:focus { outline: none; border-color: #2e86c1; }
+  .login-box button {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: #2e86c1;
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .login-box button:hover { background: #2471a3; }
+  .error { color: #e74c3c; font-size: 0.85rem; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+
+<div class="login-box">
+  <h2>🎾 齐动力网球会员杯</h2>
+  <p class="sub">管理后台 · 请输入密码</p>
+
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/admin/login">
+    <input type="password" name="password" placeholder="输入密码" autofocus>
+    <button type="submit">登录</button>
+  </form>
+
+  <p style="margin-top:16px;font-size:0.75rem;color:#aaa">
+    管理员密码：全功能 · 裁判员密码：仅记分
+  </p>
+</div>
+
+</body>
+</html>

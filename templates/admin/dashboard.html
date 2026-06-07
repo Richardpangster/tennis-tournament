@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>齐动力网球会员杯 — 管理后台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start">
+    <div>
+      <h1>🎾 齐动力网球会员杯积分赛（端午站）</h1>
+      <div class="sub">管理后台 — 2026年6月19日 · 北京科技大学求实气膜网球馆</div>
+      <div class="sub" style="margin-top:8px">
+        📋 <a href="https://ddwp9dyl.jsjform.com/f/z8H1Sz" target="_blank" style="color:#fff;text-decoration:underline">报名表链接</a>
+        · 6月6日12:00 开放 · 6月12日20:00 截止
+        · <a href="/public" target="_blank" style="color:#fff;text-decoration:underline">公开展示页</a>
+      </div>
+    </div>
+    <div style="text-align:right;font-size:0.8rem">
+      <span class="badge" style="background:{{ 'rgba(255,255,255,0.2)' if role=='admin' else 'rgba(255,193,7,0.8)' }};color:#fff;margin-bottom:4px;display:inline-block">{{ '管理员' if role=='admin' else '裁判员' }}</span>
+      <br><a href="/admin/logout" style="color:#fff;opacity:0.7;font-size:0.75rem">退出</a>
+    </div>
+  </div>
+</header>
+
+<!-- Category tabs -->
+<div class="tabs" id="category-tabs"></div>
+
+<!-- Function tabs -->
+<div class="tabs" id="func-tabs" style="background:#fafafa;">
+  {% if role == 'admin' %}
+  <button class="tab active" data-func="players">球员管理</button>
+  <button class="tab" data-func="group">小组赛</button>
+  <button class="tab" data-func="knockout">淘汰赛</button>
+  {% endif %}
+  <button class="tab {{ 'active' if role=='referee' else '' }}" data-func="quick">快速记分</button>
+</div>
+
+<div class="container" id="content">加载中…</div>
+
+<script>
+// ═══════════ State ═══════════
+const CATS = ['U8','U10','U12','U14'];
+let cat = 'U8';
+let func = '{{ "quick" if role == "referee" else "players" }}';
+
+function scoreUnit(c) { return c === 'U8' ? '分' : '局'; }
+function scoreRule(c) { return c === 'U8' ? '一局11分定胜负' : '4局无占先，2:2抢7决胜（如2:2抢7胜，直接输抢七比分如7-5）'; }
+
+// ═══════════ Init ═══════════
+async function init() {
+  renderCategoryTabs();
+  await loadContent();
+}
+
+function renderCategoryTabs() {
+  const t = document.getElementById('category-tabs');
+  t.innerHTML = CATS.map(c =>
+    `<button class="tab${c===cat?' active':''}" data-cat="${c}">${c}</button>`
+  ).join('');
+  t.querySelectorAll('.tab').forEach(el => el.onclick = () => { cat=el.dataset.cat; switchCategory(); });
+}
+
+document.getElementById('func-tabs').querySelectorAll('.tab').forEach(el => {
+  el.onclick = () => {
+    document.querySelectorAll('#func-tabs .tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    func = el.dataset.func;
+    loadContent();
+  };
+});
+
+function switchCategory() {
+  document.querySelectorAll('#category-tabs .tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`#category-tabs [data-cat="${cat}"]`).classList.add('active');
+  loadContent();
+}
+
+// ═══════════ API helpers ═══════════
+async function api(url, opts={}) {
+  const res = await fetch(url, {headers:{'Content-Type':'application/json'}, ...opts});
+  if (!res.ok) {
+    const e = await res.json().catch(()=>({detail:res.statusText}));
+    throw new Error(e.detail||'请求失败');
+  }
+  return res.json();
+}
+
+async function loadContent() {
+  const el = document.getElementById('content');
+  try {
+    if (func === 'players') await loadPlayers(el);
+    else if (func === 'group') await loadGroupStage(el);
+    else if (func === 'knockout') await loadKnockout(el);
+    else if (func === 'quick') await loadQuickScore(el);
+  } catch(e) {
+    el.innerHTML = `<div class="card" style="color:#e74c3c">⚠ ${e.message}</div>`;
+  }
+}
+
+// ═══════════ Toast ═══════════
+function toast(msg, type='success') {
+  const t = document.createElement('div');
+  t.className = `toast toast-${type}`;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+// ═══════════ Player Management ═══════════
+async function loadPlayers(el) {
+  const [players, counts] = await Promise.all([
+    api('/api/players?category='+cat),
+    api('/api/players/counts')
+  ]);
+  const myCount = players.length;
+  const hasGroup = await checkGroupStage();
+
+  let html = '';
+  // Counts bar
+  html += '<div class="card" style="display:flex;gap:16px;font-size:0.9rem">';
+  for (const c of CATS) {
+    const full = counts[c] >= 16;
+    html += `<span>${c}: <strong>${counts[c]}/16</strong> <span class="badge ${full?'badge-full':'badge-open'}">${full?'已满':'报名中'}</span></span>`;
+  }
+  html += '</div>';
+
+  // Add form
+  html += `<div class="card">
+    <h3>添加球员 — ${cat}</h3>
+    <div class="form-row">
+      <input id="pname" placeholder="学员姓名" required>
+      <input id="pphone" placeholder="手机号" required>
+      <input id="pbirth" placeholder="出生日期 (选填)" type="date">
+      <button class="btn btn-primary" id="btn-add" ${myCount>=16?'disabled':''}>添加</button>
+    </div>
+  </div>`;
+
+  // Import section
+  html += `<div class="card">
+    <h3>📥 批量导入 <span style="font-weight:400;font-size:0.8rem;color:#888">— 从金数据导出CSV，全选内容粘贴到下方</span></h3>
+    <textarea id="csv-text" rows="5" placeholder="粘贴CSV内容&#10;金数据 → 数据 → 导出CSV → 用记事本打开 → 全选复制 → 粘贴到这里"
+      style="width:100%;font-family:monospace;font-size:0.8rem;padding:8px;border:1px solid #ddd;border-radius:6px"></textarea>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" id="btn-import-auto">自动识别组别导入</button>
+      <span style="font-size:0.75rem;color:#888">或指定组别:</span>
+      ${CATS.map(c => `<button class="btn btn-sm btn-outline import-cat-btn" data-cat="${c}" ${(counts[c]||0)>=16?'disabled':''}>仅导入${c}</button>`).join('')}
+      <span style="font-size:0.75rem;color:#888">CSV需含「参赛组别」列（值为U8/U10/U12/U14）</span>
+    </div>
+    <div id="import-result" style="margin-top:8px;font-size:0.85rem"></div>
+  </div>`;
+
+  // Actions bar
+  html += '<div class="card" style="display:flex;gap:8px;align-items:center">';
+  html += `<span>共 <strong>${myCount}</strong> 人</span>`;
+  if (!hasGroup && myCount === 16) {
+    html += '<button class="btn btn-primary" id="btn-draw">🎲 一键分组抽签</button>';
+  }
+  if (hasGroup) {
+    html += `<button class="btn btn-danger btn-sm" id="btn-clear-groups">清除分组（重新抽签）</button>`;
+  }
+  html += '</div>';
+
+  // Player list
+  if (players.length > 0) {
+    html += '<div class="card"><table><thead><tr><th>#</th><th>姓名</th><th>手机号</th><th>出生日期</th><th></th></tr></thead><tbody>';
+    players.forEach((p,i) => {
+      html += `<tr>
+        <td>${i+1}</td><td>${p.name}</td><td>${p.phone}</td><td>${p.birth_date||'-'}</td>
+        <td><button class="btn btn-danger btn-sm del-btn" data-id="${p.id}">删除</button></td>
+      </tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+
+  el.innerHTML = html;
+
+  // Bind events
+  document.getElementById('btn-add')?.addEventListener('click', addPlayer);
+  document.getElementById('btn-import-auto')?.addEventListener('click', () => doImport('auto'));
+  document.querySelectorAll('.import-cat-btn').forEach(b => b.onclick = () => doImport(b.dataset.cat));
+  document.getElementById('btn-draw')?.addEventListener('click', doDraw);
+  document.getElementById('btn-clear-groups')?.addEventListener('click', doClearGroups);
+  document.querySelectorAll('.del-btn').forEach(b => b.onclick = () => doDelete(b.dataset.id));
+}
+
+async function addPlayer() {
+  const name = document.getElementById('pname').value.trim();
+  const phone = document.getElementById('pphone').value.trim();
+  const birth = document.getElementById('pbirth').value;
+  if (!name || !phone) return toast('请填写姓名和手机号', 'error');
+  try {
+    await api('/api/players', {method:'POST', body:JSON.stringify({name, phone, category:cat, birth_date:birth||undefined})});
+    toast('添加成功');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function doDelete(id) {
+  if (!confirm('确定删除？')) return;
+  await api('/api/players/'+id, {method:'DELETE'});
+  toast('已删除');
+  loadContent();
+}
+
+async function doDraw() {
+  if (!confirm(`确定对 ${cat} 组进行随机分组抽签？`)) return;
+  try {
+    const r = await api('/api/draw-groups/'+cat, {method:'POST'});
+    toast('分组完成！4个小组已生成');
+    // Switch to group tab
+    func = 'group';
+    document.querySelectorAll('#func-tabs .tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('#func-tabs [data-func="group"]').classList.add('active');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function doClearGroups() {
+  if (!confirm('确定清除所有分组和比赛数据？此操作不可恢复。')) return;
+  await api('/api/clear/'+cat, {method:'POST'});
+  toast('已清除');
+  loadContent();
+}
+
+async function doImport(targetCat) {
+  const csv = document.getElementById('csv-text').value.trim();
+  if (!csv) return toast('请先粘贴CSV内容', 'error');
+  const btns = document.querySelectorAll('#btn-import-auto, .import-cat-btn');
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await api('/api/players/import', {
+      method: 'POST',
+      body: JSON.stringify({csv_text: csv, category: targetCat})
+    });
+    const el = document.getElementById('import-result');
+    let msg = `成功导入 <strong>${r.imported}</strong> 人`;
+    if (r.skipped > 0) msg += `，跳过 ${r.skipped} 人（已满）`;
+    if (r.by_category) {
+      msg += '<br>';
+      for (const [c, info] of Object.entries(r.by_category)) {
+        msg += `<span style="margin-right:12px">${c}: +${info.imported} 人（剩${info.remaining}名额）</span>`;
+      }
+    }
+    if (r.errors.length > 0) {
+      msg += `<br><span style="color:#e67e22">${r.errors.join('<br>')}</span>`;
+    }
+    el.innerHTML = msg;
+    toast(`导入完成: ${r.imported} 人`);
+    loadContent();  // refresh
+  } catch(e) {
+    document.getElementById('import-result').innerHTML = `<span style="color:#e74c3c">${e.message}</span>`;
+    toast(e.message, 'error');
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+async function checkGroupStage() {
+  try {
+    const m = await api('/api/matches/'+cat+'?stage=group');
+    return m.length > 0;
+  } catch { return false; }
+}
+
+// ═══════════ Group Stage ═══════════
+async function loadGroupStage(el) {
+  const hasGroup = await checkGroupStage();
+  if (!hasGroup) {
+    el.innerHTML = `<div class="card" style="text-align:center;padding:40px;color:#999">
+      <p style="font-size:3rem">📋</p>
+      <p>尚未分组抽签，请先在「球员管理」中添加 16 名球员并点击「一键分组抽签」</p>
+    </div>`;
+    return;
+  }
+
+  const [matches, standings] = await Promise.all([
+    api('/api/matches/'+cat+'?stage=group'),
+    api('/api/standings/'+cat)
+  ]);
+  const allDone = matches.every(m => m.status === 'completed');
+  const hasKO = await checkKnockout();
+
+  let html = '';
+
+  // Scoring rule
+  html += `<div class="card" style="font-size:0.85rem;color:#888;padding:8px 16px;margin-bottom:12px">
+    <strong>${cat} 计分规则：</strong>${scoreRule(cat)} · 排名：胜场→净胜${scoreUnit(cat)}→胜负关系
+  </div>`;
+
+  // Actions bar
+  html += '<div class="card" style="display:flex;gap:8px;align-items:center">';
+  const doneCount = matches.filter(m => m.status === 'completed').length;
+  html += `<span>小组赛进度: <strong>${doneCount}/${matches.length}</strong></span>`;
+  if (allDone && !hasKO) {
+    html += '<button class="btn btn-primary" id="btn-top8">🏆 生成 8 强淘汰赛</button>';
+  }
+  if (hasKO) {
+    html += '<span class="badge badge-open">✓ 8强已生成</span>';
+  }
+  html += '</div>';
+
+  // Group matches
+  ['A','B','C','D'].forEach(g => {
+    const groupMatches = matches.filter(m => m.group_name === g);
+    html += `<div class="card"><h3>${g} 组</h3>`;
+
+    // Matches by round
+    for (let r = 1; r <= 3; r++) {
+      const roundMatches = groupMatches.filter(m => m.round === r);
+      html += `<div style="margin-bottom:8px"><strong style="font-size:0.85rem;color:#888">第 ${r} 轮</strong>`;
+      roundMatches.forEach(m => {
+        html += renderMatchRow(m);
+      });
+      html += '</div>';
+    }
+
+    // Standings
+    const gs = standings[g] || [];
+    if (gs.length) {
+      html += '<table style="margin-top:8px"><thead><tr><th>排名</th><th>球员</th><th>胜</th><th>负</th><th>净胜</th><th>得分</th></tr></thead><tbody>';
+      gs.forEach((s,i) => {
+        html += `<tr>
+          <td>${i+1}</td>
+          <td class="${i<2?'qualify':''}">${s.player_name}${i<2?' ↑':''}</td>
+          <td>${s.wins}</td><td>${s.losses}</td>
+          <td>${s.pd>0?'+':''}${s.pd}</td><td>${s.pf}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+  });
+
+  el.innerHTML = html;
+
+  // Bind events
+  document.getElementById('btn-top8')?.addEventListener('click', doTop8Draw);
+  document.querySelectorAll('.save-score').forEach(b => b.onclick = () => doSaveScore(b.dataset.id));
+}
+
+function renderMatchRow(m) {
+  const p1 = m.player1_name || '—';
+  const p2 = m.player2_name || '—';
+  const done = m.status === 'completed';
+  const unit = scoreUnit(cat);
+  let s = `<div class="match-item">`;
+  s += `<span style="flex:1;text-align:right">${p1}</span>`;
+  if (done) {
+    let scoreText = `${m.score1} - ${m.score2}`;
+    if (m.tb_score1 != null && m.tb_score2 != null) {
+      scoreText += ` <span style="font-size:0.75rem;color:#888">(抢七 ${m.tb_score1}-${m.tb_score2})</span>`;
+    }
+    s += `<span class="match-done" style="margin:0 8px">${scoreText}</span>`;
+  } else {
+    s += `<input class="match-score-input" value="${m.score1??''}" data-mid="${m.id}" data-slot="1" placeholder="局分">`;
+    s += `<span class="match-vs">:</span>`;
+    s += `<input class="match-score-input" value="${m.score2??''}" data-mid="${m.id}" data-slot="2" placeholder="局分">`;
+    s += `<input class="match-score-input" value="${m.tb_score1??''}" data-mid="${m.id}" data-slot="tb1" placeholder="抢七" style="width:40px;font-size:0.75rem;color:#888">`;
+    s += `<span style="font-size:0.7rem;color:#ccc">:</span>`;
+    s += `<input class="match-score-input" value="${m.tb_score2??''}" data-mid="${m.id}" data-slot="tb2" placeholder="抢七" style="width:40px;font-size:0.75rem;color:#888">`;
+    s += `<button class="btn btn-sm btn-outline save-score" data-id="${m.id}" style="margin-left:8px">保存</button>`;
+  }
+  s += `<span style="flex:1">${p2}</span>`;
+  s += '</div>';
+  return s;
+}
+
+async function doSaveScore(mid) {
+  const inp1 = document.querySelector(`input[data-mid="${mid}"][data-slot="1"]`);
+  const inp2 = document.querySelector(`input[data-mid="${mid}"][data-slot="2"]`);
+  const tb1 = document.querySelector(`input[data-mid="${mid}"][data-slot="tb1"]`);
+  const tb2 = document.querySelector(`input[data-mid="${mid}"][data-slot="tb2"]`);
+  const s1 = parseInt(inp1.value), s2 = parseInt(inp2.value);
+  if (isNaN(s1) || isNaN(s2)) return toast('请输入双方局分', 'error');
+  const body = {score1:s1, score2:s2};
+  if (tb1 && tb2) {
+    const t1 = parseInt(tb1.value), t2 = parseInt(tb2.value);
+    if (!isNaN(t1) && !isNaN(t2)) { body.tb_score1 = t1; body.tb_score2 = t2; }
+  }
+  try {
+    await api('/api/matches/'+mid+'/score', {method:'PUT', body:JSON.stringify(body)});
+    toast('比分已保存');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ═══════════ Knockout ═══════════
+async function checkKnockout() {
+  try { const m = await api('/api/knockout/'+cat); return m.length > 0; } catch { return false; }
+}
+
+async function loadKnockout(el) {
+  const hasKO = await checkKnockout();
+  if (!hasKO) {
+    el.innerHTML = `<div class="card" style="text-align:center;padding:40px;color:#999">
+      <p style="font-size:3rem">🏆</p>
+      <p>尚未生成淘汰赛，请先完成小组赛并在「小组赛」中点击「生成8强淘汰赛」</p>
+    </div>`;
+    return;
+  }
+
+  const matches = await api('/api/knockout/'+cat);
+  const byStage = {};
+  matches.forEach(m => { byStage[m.stage] = byStage[m.stage] || []; byStage[m.stage].push(m); });
+
+  let html = '<div class="card"><h3>🏆 淘汰赛对阵图</h3>';
+  html += '<div style="overflow-x:auto">';
+  html += '<table style="min-width:600px">';
+
+  // QF
+  const qfs = (byStage['quarterfinal']||[]).sort((a,b)=>a.match_order-b.match_order);
+  html += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">8强</td>';
+  html += '<td colspan="2" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
+  html += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
+
+  const QF_LABELS = {1:'A1 vs C2', 2:'B1 vs D2', 3:'C1 vs A2', 4:'D1 vs B2'};
+
+  for (let i = 0; i < 4; i++) {
+    html += '<tr>';
+    const qf = qfs[i];
+    const label = QF_LABELS[qf.match_order] || '';
+    html += `<td colspan="4" style="border-right:2px solid #ddd">${renderKOMatch(qf, label)}</td>`;
+    // 上半区 SF1 (rows 0,1)
+    if (i < 2) {
+      const sf = (byStage['semifinal']||[]).find(m=>m.match_order===5);
+      if (i === 0) html += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderKOMatch(sf, '上半区'):'—'}</td>`;
+    }
+    // 下半区 SF2 (rows 2,3)
+    if (i >= 2) {
+      const sf = (byStage['semifinal']||[]).find(m=>m.match_order===6);
+      if (i === 2) html += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderKOMatch(sf, '下半区'):'—'}</td>`;
+    }
+    // 决赛 (spans all 4 rows)
+    if (i < 1) {
+      const fin = (byStage['final']||[])[0];
+      html += `<td rowspan="4" style="vertical-align:middle">${fin?renderKOMatch(fin):'—'}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</table></div>';
+  html += '</div>';
+
+  // Score editing for incomplete knockout matches
+  const pending = matches.filter(m => m.status !== 'completed' && m.player1_id && m.player2_id);
+  if (pending.length > 0) {
+    html += '<div class="card"><h3>录入比分</h3>';
+    pending.forEach(m => {
+      html += `<div style="margin-bottom:12px">`;
+      html += `<span style="color:#888;font-size:0.85rem">${stageLabel(m.stage)} #${m.match_order}</span><br>`;
+      html += renderMatchRow(m);
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+
+  // Bind
+  document.querySelectorAll('.save-score').forEach(b => b.onclick = () => doSaveScore(b.dataset.id));
+}
+
+function renderKOMatch(m, label) {
+  if (!m) return '<span style="color:#ccc">—</span>';
+  const p1 = m.player1_name || '待定';
+  const p2 = m.player2_name || '待定';
+  const done = m.status === 'completed';
+  let s = '<div style="font-size:0.85rem;padding:4px 0">';
+  if (label) s += `<div style="font-size:0.7rem;color:#888;margin-bottom:2px">${label}</div>`;
+  s += `<div class="player${done && m.winner_id===m.player1_id?' winner':''}">${p1}</div>`;
+  s += `<div class="player${done && m.winner_id===m.player2_id?' winner':''}">${p2}</div>`;
+  if (done) {
+    let scoreText = `${m.score1}-${m.score2}`;
+    if (m.tb_score1 != null && m.tb_score2 != null) {
+      scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
+    }
+    s += `<div style="color:#27ae60;font-weight:600;font-size:0.8rem">${scoreText}</div>`;
+  }
+  s += '</div>';
+  return s;
+}
+
+function stageLabel(s) {
+  return {quarterfinal:'8强赛', semifinal:'半决赛', final:'决赛'}[s] || s;
+}
+
+async function doTop8Draw() {
+  if (!confirm('确定生成8强对阵？对阵为 A1vsC2, B1vsD2, C1vsA2, D1vsB2')) return;
+  try {
+    await api('/api/draw-top8/'+cat, {method:'POST'});
+    toast('8强抽签完成！');
+    func = 'knockout';
+    document.querySelectorAll('#func-tabs .tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('#func-tabs [data-func="knockout"]').classList.add('active');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ═══════════ Quick Score ═══════════
+async function loadQuickScore(el) {
+  const matches = await api('/api/matches/'+cat);
+  const hasGroup = matches.some(m => m.stage === 'group');
+  const hasKO = matches.some(m => m.stage !== 'group');
+
+  // Auto-detect stage on first load
+  if (!quickStageInit) {
+    quickStageInit = true;
+    const groupDone = hasGroup && matches.filter(m=>m.stage==='group').every(m=>m.status==='completed');
+    quickStage = (hasKO && groupDone) ? 'knockout' : (hasGroup ? 'group' : 'group');
+  }
+  const stage = quickStage;
+
+  if (!stage) {
+    el.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:#999">暂无比赛数据</div>';
+    return;
+  }
+
+  let html = '';
+
+  // Stage toggle
+  html += '<div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+  html += `<span style="font-size:0.9rem;color:#888">阶段:</span>`;
+  html += `<button class="btn btn-sm ${stage==='group'?'btn-primary':'btn-outline'}" id="qstage-group">小组赛</button>`;
+  html += `<button class="btn btn-sm ${stage==='knockout'?'btn-primary':'btn-outline'}" id="qstage-ko">淘汰赛</button>`;
+  html += '<span style="margin-left:16px;font-size:0.9rem;color:#888">组别:</span>';
+  for (const g of ['all','A','B','C','D']) {
+    html += `<button class="btn btn-sm ${quickFilter===g?'btn-primary':'btn-outline'} qfilter-btn" data-g="${g}">${g==='all'?'全部':g+'组'}</button>`;
+  }
+  html += '<label style="margin-left:auto;font-size:0.85rem;cursor:pointer">';
+  html += `<input type="checkbox" id="qpending" ${quickPending?'checked':''} style="margin-right:4px">只显示未完成</label>`;
+  html += '</div>';
+
+  // Match cards
+  const shown = filterQuickMatches(matches, stage);
+  if (shown.length === 0) {
+    html += '<div class="card" style="text-align:center;padding:30px;color:#999">没有符合条件的比赛</div>';
+  } else {
+    html += `<div style="font-size:0.85rem;color:#888;padding:8px 0">共 ${shown.length} 场</div>`;
+    for (const m of shown) {
+      html += renderQuickCard(m, stage);
+    }
+  }
+
+  el.innerHTML = html;
+
+  // Bind events
+  document.getElementById('qstage-group')?.addEventListener('click', ()=>{
+    quickStage = 'group'; quickStageInit = true; loadContent();
+  });
+  document.getElementById('qstage-ko')?.addEventListener('click', ()=>{
+    quickStage = 'knockout'; quickStageInit = true; loadContent();
+  });
+  document.querySelectorAll('.qfilter-btn').forEach(b => b.onclick = ()=>{
+    quickFilter = b.dataset.g; loadContent();
+  });
+  document.getElementById('qpending')?.addEventListener('change', (e)=>{
+    quickPending = e.target.checked; loadContent();
+  });
+  document.querySelectorAll('.qsave-btn').forEach(b => b.onclick = ()=> quickSave(b.dataset.id));
+  // Enter key submit
+  document.querySelectorAll('.qscore-inp').forEach(inp => {
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const mid = inp.dataset.mid;
+        quickSave(mid);
+      }
+    });
+  });
+}
+
+let quickStage = 'group';
+let quickStageInit = false;
+let quickFilter = 'all';
+let quickPending = true;
+
+function filterQuickMatches(matches, stage) {
+  let filtered = matches.filter(m => m.stage === stage);
+  if (quickFilter !== 'all') {
+    if (stage === 'group') {
+      filtered = filtered.filter(m => m.group_name === quickFilter);
+    }
+    // knockout doesn't filter by group_name
+  }
+  if (quickPending) {
+    filtered = filtered.filter(m => m.status !== 'completed');
+  }
+  return filtered;
+}
+
+function renderQuickCard(m, stage) {
+  const p1 = m.player1_name || '—';
+  const p2 = m.player2_name || '—';
+  const label = stage === 'group'
+    ? `${m.group_name}组 第${m.round}轮`
+    : ({quarterfinal:'8强',semifinal:'半决赛',final:'决赛'}[m.stage]||m.stage) + ` #${m.match_order}`;
+  const isTiebreak = m.tb_score1 != null && m.tb_score2 != null;
+
+  let s = '<div class="card" style="padding:12px 16px;margin-bottom:10px">';
+  s += `<div style="font-size:0.75rem;color:#888;margin-bottom:6px">${label}</div>`;
+  s += `<div style="font-size:1rem;font-weight:600;margin-bottom:10px;text-align:center">${p1}  vs  ${p2}</div>`;
+
+  s += '<div style="display:flex;align-items:center;gap:6px;justify-content:center;flex-wrap:wrap">';
+  s += `<input class="match-score-input qscore-inp" data-mid="${m.id}" data-slot="1" placeholder="局分" style="width:56px;font-size:1rem;padding:8px" autocomplete="off">`;
+  s += '<span style="font-weight:700">:</span>';
+  s += `<input class="match-score-input qscore-inp" data-mid="${m.id}" data-slot="2" placeholder="局分" style="width:56px;font-size:1rem;padding:8px" autocomplete="off">`;
+  s += '<span style="font-size:0.75rem;color:#aaa;margin:0 4px">抢七</span>';
+  s += `<input class="match-score-input" data-mid="${m.id}" data-slot="qtb1" placeholder="—" style="width:42px;font-size:0.8rem;padding:6px" autocomplete="off">`;
+  s += '<span>:</span>';
+  s += `<input class="match-score-input" data-mid="${m.id}" data-slot="qtb2" placeholder="—" style="width:42px;font-size:0.8rem;padding:6px" autocomplete="off">`;
+  s += `<button class="btn btn-primary btn-sm qsave-btn" data-id="${m.id}" style="margin-left:8px">保存</button>`;
+  s += '</div>';
+
+  s += `<div id="qresult-${m.id}" style="text-align:center;margin-top:8px"></div>`;
+  s += '</div>';
+  return s;
+}
+
+async function quickSave(mid) {
+  const inp1 = document.querySelector(`input[data-mid="${mid}"][data-slot="1"]`);
+  const inp2 = document.querySelector(`input[data-mid="${mid}"][data-slot="2"]`);
+  const tb1 = document.querySelector(`input[data-mid="${mid}"][data-slot="qtb1"]`);
+  const tb2 = document.querySelector(`input[data-mid="${mid}"][data-slot="qtb2"]`);
+  const s1 = parseInt(inp1.value), s2 = parseInt(inp2.value);
+  if (isNaN(s1) || isNaN(s2)) return toast('请输入双方局分','error');
+
+  const body = {score1:s1, score2:s2};
+  const t1 = parseInt(tb1.value), t2 = parseInt(tb2.value);
+  if (!isNaN(t1) && !isNaN(t2)) { body.tb_score1 = t1; body.tb_score2 = t2; }
+
+  try {
+    const r = await api('/api/matches/'+mid+'/score', {method:'PUT', body:JSON.stringify(body)});
+    const winner = r.winner_id;
+    // Update just this card's result
+    const m = await api('/api/knockout/'+cat);
+    const match = [...m, ...(await api('/api/matches/'+cat+'?stage=group'))].find(x=>x.id===mid);
+    const resultEl = document.getElementById('qresult-'+mid);
+    if (resultEl && match) {
+      let text = `${match.player1_name} ${match.score1}-${match.score2} ${match.player2_name}`;
+      if (match.tb_score1 != null) text += ` (抢七 ${match.tb_score1}-${match.tb_score2})`;
+      const wn = match.winner_name || '?';
+      resultEl.innerHTML = `<span style="color:#27ae60;font-weight:600">✓ ${text}  → ${wn} 胜</span>`;
+    }
+    // Disable inputs
+    [inp1,inp2,tb1,tb2].forEach(el => { if(el) el.disabled = true; });
+    // Hide save button for this card
+    const btn = document.querySelector(`button.qsave-btn[data-id="${mid}"]`);
+    if (btn) btn.style.display = 'none';
+
+    toast('已保存');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ═══════════ Start ═══════════
+init();
+</script>
+</body>
+</html>
