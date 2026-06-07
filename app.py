@@ -92,8 +92,8 @@ def root():
 
 @app.get("/admin/login", response_class=HTMLResponse)
 def login_page(request: Request, error: str = ""):
-    return templates.TemplateResponse("admin/login.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="admin/login.html", context={
+
         "error": error,
     })
 
@@ -105,8 +105,7 @@ def login(request: Request, password: str = Form(...)):
     elif password == REFEREE_PASSWORD:
         role = "referee"
     else:
-        return templates.TemplateResponse("admin/login.html", {
-            "request": request,
+        return templates.TemplateResponse(request=request, name="admin/login.html", context={
             "error": "密码错误",
         }, status_code=401)
 
@@ -126,8 +125,8 @@ def admin_page(request: Request):
     role = check_auth(request)
     if not role:
         return RedirectResponse("/admin/login", status_code=303)
-    return templates.TemplateResponse("admin/dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request=request, name="admin/dashboard.html", context={
+
         "role": role,
     })
 
@@ -136,8 +135,7 @@ def admin_page(request: Request):
 def public_home(request: Request):
     try:
         counts = {c: db.get_player_count(c) for c in CATEGORIES}
-        return templates.TemplateResponse("public/index.html", {
-            "request": request,
+        return templates.TemplateResponse(request=request, name="public/index.html", context={
             "categories": CATEGORIES,
             "counts": counts,
         })
@@ -159,8 +157,7 @@ def public_category(request: Request, category: str):
     if category not in CATEGORIES:
         raise HTTPException(404, "组别不存在")
     try:
-        return templates.TemplateResponse("public/category.html", {
-            "request": request,
+        return templates.TemplateResponse(request=request, name="public/category.html", context={
             "category": category,
         })
     except Exception as e:
