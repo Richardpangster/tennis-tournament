@@ -133,22 +133,28 @@ def admin_page(request: Request):
 
 @app.get("/public", response_class=HTMLResponse)
 def public_home(request: Request):
-    counts = {c: db.get_player_count(c) for c in CATEGORIES}
-    return templates.TemplateResponse("public/index.html", {
-        "request": request,
-        "categories": CATEGORIES,
-        "counts": counts,
-    })
+    try:
+        counts = {c: db.get_player_count(c) for c in CATEGORIES}
+        return templates.TemplateResponse("public/index.html", {
+            "request": request,
+            "categories": CATEGORIES,
+            "counts": counts,
+        })
+    except Exception as e:
+        return HTMLResponse(f"<h2>Error</h2><pre>{e}</pre>", status_code=500)
 
 
 @app.get("/public/{category}", response_class=HTMLResponse)
 def public_category(request: Request, category: str):
     if category not in CATEGORIES:
         raise HTTPException(404, "组别不存在")
-    return templates.TemplateResponse("public/category.html", {
-        "request": request,
-        "category": category,
-    })
+    try:
+        return templates.TemplateResponse("public/category.html", {
+            "request": request,
+            "category": category,
+        })
+    except Exception as e:
+        return HTMLResponse(f"<h2>Error</h2><pre>{e}</pre>", status_code=500)
 
 
 # ═══════════════ Player API ═══════════════
