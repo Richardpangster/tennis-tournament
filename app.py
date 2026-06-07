@@ -142,7 +142,15 @@ def public_home(request: Request):
         })
     except Exception as e:
         import traceback
-        return HTMLResponse(f"<h2>Error</h2><pre>{traceback.format_exc()}</pre>", status_code=500)
+        tb = traceback.format_exc()
+        print(tb)
+        return HTMLResponse(f"<h2>Error</h2><pre>{tb}</pre>", status_code=500)
+
+
+@app.get("/health")
+def health():
+    """Simple health check - no DB, no template"""
+    return {"status": "ok"}
 
 
 @app.get("/public/{category}", response_class=HTMLResponse)
