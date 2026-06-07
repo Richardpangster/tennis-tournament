@@ -3,12 +3,12 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "healthcheckPath": "/public"
-  },
-  "mounts": [
-    {
-      "source": "tournament-data",
-      "destination": "/data"
-    }
-  ]
+    "healthcheckPath": "/public",
+    "mounts": [
+      {
+        "source": "tournament-data",
+        "destination": "/data"
+      }
+    ]
+  }
 }

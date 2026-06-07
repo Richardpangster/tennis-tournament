@@ -3,6 +3,9 @@ import os
 
 DB_PATH = os.getenv("DATABASE_PATH") or os.path.join(os.path.dirname(__file__), 'tournament.db')
 
+# Ensure parent directory exists (for Railway volume mounts)
+os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
+
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
