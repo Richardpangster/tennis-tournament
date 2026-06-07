@@ -141,7 +141,8 @@ def public_home(request: Request):
             "counts": counts,
         })
     except Exception as e:
-        return HTMLResponse(f"<h2>Error</h2><pre>{e}</pre>", status_code=500)
+        import traceback
+        return HTMLResponse(f"<h2>Error</h2><pre>{traceback.format_exc()}</pre>", status_code=500)
 
 
 @app.get("/public/{category}", response_class=HTMLResponse)
