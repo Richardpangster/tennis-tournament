@@ -84,6 +84,11 @@ def require_role(request: Request, allowed: list[str]):
 
 # ═══════════════ Page Routes ═══════════════
 
+@app.get("/")
+def root():
+    return RedirectResponse("/public")
+
+
 @app.get("/admin/login", response_class=HTMLResponse)
 def login_page(request: Request, error: str = ""):
     return templates.TemplateResponse("admin/login.html", {
