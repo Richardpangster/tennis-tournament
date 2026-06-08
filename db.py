@@ -109,7 +109,7 @@ def update_player(player_id: int, name: str = None, phone: str = None, birth_dat
         values.append(phone)
     if birth_date is not None:
         fields.append("birth_date=?")
-        values.append(birth_date)
+        values.append(birth_date if birth_date != "" else None)
     updated = False
     if fields:
         values.append(player_id)

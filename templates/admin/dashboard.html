@@ -222,7 +222,7 @@ async function saveEdit(id) {
   try {
     await api('/api/players/'+id, {
       method: 'PUT',
-      body: JSON.stringify({name, phone, birth_date: birth||null})
+      body: JSON.stringify({name, phone, birth_date: birth})
     });
     toast('已保存');
     loadContent();
