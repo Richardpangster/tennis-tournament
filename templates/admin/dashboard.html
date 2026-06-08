@@ -168,9 +168,16 @@ async function loadPlayers(el) {
   if (players.length > 0) {
     html += '<div class="card"><table><thead><tr><th>#</th><th>姓名</th><th>手机号</th><th>出生日期</th><th></th></tr></thead><tbody>';
     players.forEach((p,i) => {
-      html += `<tr>
-        <td>${i+1}</td><td>${p.name}</td><td>${p.phone}</td><td>${p.birth_date||'-'}</td>
-        <td><button class="btn btn-danger btn-sm del-btn" data-id="${p.id}">删除</button></td>
+      const nm = p.name.replace(/"/g, '&quot;');
+      html += `<tr id="row-${p.id}">
+        <td>${i+1}</td>
+        <td class="cell-name">${p.name}</td>
+        <td class="cell-phone">${p.phone}</td>
+        <td class="cell-birth">${p.birth_date||'-'}</td>
+        <td>
+          <button class="btn btn-sm btn-outline edit-btn" data-id="${p.id}" data-name="${nm}" data-phone="${p.phone}" data-birth="${p.birth_date||''}">编辑</button>
+          <button class="btn btn-danger btn-sm del-btn" data-id="${p.id}">删除</button>
+        </td>
       </tr>`;
     });
     html += '</tbody></table></div>';
@@ -185,6 +192,41 @@ async function loadPlayers(el) {
   document.getElementById('btn-draw')?.addEventListener('click', doDraw);
   document.getElementById('btn-clear-groups')?.addEventListener('click', doClearGroups);
   document.querySelectorAll('.del-btn').forEach(b => b.onclick = () => doDelete(b.dataset.id));
+  document.querySelectorAll('.edit-btn').forEach(b => b.onclick = function() { startEdit(this); });
+}
+
+async function startEdit(btn) {
+  const id = btn.dataset.id;
+  const row = document.getElementById('row-'+id);
+  const name = btn.dataset.name.replace(/&quot;/g, '"');
+  const phone = btn.dataset.phone;
+  const birth = btn.dataset.birth;
+  row.innerHTML = `
+    <td>${row.cells[0].textContent}</td>
+    <td><input id="ename-${id}" value="${name.replace(/"/g,'&quot;')}" style="width:100%;padding:4px;border:1px solid #2e86c1;border-radius:4px"></td>
+    <td><input id="ephone-${id}" value="${phone}" style="width:100%;padding:4px;border:1px solid #2e86c1;border-radius:4px"></td>
+    <td><input id="ebirth-${id}" type="date" value="${birth}" style="width:100%;padding:4px;border:1px solid #2e86c1;border-radius:4px"></td>
+    <td>
+      <button class="btn btn-primary btn-sm save-edit-btn" data-id="${id}">保存</button>
+      <button class="btn btn-sm btn-outline cancel-edit-btn" data-id="${id}">取消</button>
+    </td>`;
+  row.querySelector('.save-edit-btn').onclick = () => saveEdit(id);
+  row.querySelector('.cancel-edit-btn').onclick = () => loadContent();
+}
+
+async function saveEdit(id) {
+  const name = document.getElementById('ename-'+id).value.trim();
+  const phone = document.getElementById('ephone-'+id).value.trim();
+  const birth = document.getElementById('ebirth-'+id).value;
+  if (!name || !phone) return toast('姓名和手机号不能为空', 'error');
+  try {
+    await api('/api/players/'+id, {
+      method: 'PUT',
+      body: JSON.stringify({name, phone, birth_date: birth})
+    });
+    toast('已保存');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function addPlayer() {

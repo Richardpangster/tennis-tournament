@@ -29,6 +29,12 @@ class PlayerCreate(BaseModel):
     birth_date: str | None = None
 
 
+class PlayerUpdate(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    birth_date: str | None = None
+
+
 class ScoreUpdate(BaseModel):
     score1: int
     score2: int
@@ -190,6 +196,18 @@ def api_add_player(data: PlayerCreate, request: Request):
         birth_date=data.birth_date,
     )
     return {"status": "ok", "id": pid}
+
+
+@app.put("/api/players/{player_id}")
+def api_update_player(player_id: int, data: PlayerUpdate, request: Request):
+    require_role(request, ["admin"])
+    if data.name is not None and not data.name.strip():
+        raise HTTPException(400, "姓名不能为空")
+    if data.phone is not None and not data.phone.strip():
+        raise HTTPException(400, "手机号不能为空")
+    if not db.update_player(player_id, name=data.name, phone=data.phone, birth_date=data.birth_date):
+        raise HTTPException(404, "球员不存在")
+    return {"status": "ok"}
 
 
 @app.delete("/api/players/{player_id}")

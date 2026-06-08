@@ -95,6 +95,31 @@ def delete_player(player_id: int):
     conn.close()
 
 
+def update_player(player_id: int, name: str = None, phone: str = None, birth_date: str = None) -> bool:
+    """Update player fields. Only provided (non-None) fields are changed.
+    Returns True if the player was updated, False if no matching player found."""
+    conn = get_db()
+    fields = []
+    values = []
+    if name is not None:
+        fields.append("name=?")
+        values.append(name)
+    if phone is not None:
+        fields.append("phone=?")
+        values.append(phone)
+    if birth_date is not None:
+        fields.append("birth_date=?")
+        values.append(birth_date if birth_date != "" else None)
+    updated = False
+    if fields:
+        values.append(player_id)
+        cur = conn.execute(f"UPDATE players SET {', '.join(fields)} WHERE id=?", values)
+        conn.commit()
+        updated = cur.rowcount > 0
+    conn.close()
+    return updated
+
+
 def get_player_count(category: str) -> int:
     conn = get_db()
     row = conn.execute(
