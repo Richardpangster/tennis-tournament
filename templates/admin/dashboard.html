@@ -479,8 +479,6 @@ async function loadGroupStage(el) {
 
   // Bind events
   document.getElementById('btn-top8')?.addEventListener('click', doTop8Draw);
-  document.querySelectorAll('.save-score').forEach(b => b.onclick = () => doSaveScore(b.dataset.id));
-  bindPtButtons();
 }
 
 function bindPtButtons() {
@@ -539,77 +537,16 @@ function renderMatchRow(m) {
   const p1 = m.player1_name || '—';
   const p2 = m.player2_name || '—';
   const done = m.status === 'completed';
-  const isU8 = cat === 'U8';
   let s = `<div class="match-item">`;
   s += `<span style="flex:1;text-align:right">${p1}</span>`;
   if (done) {
     s += `<span class="match-done" style="margin:0 8px">${formatScoreDisplay(m)}</span>`;
   } else {
-    // Point-by-point compact UI
-    initScoreState(m.id);
-    if (m.game_details && scoreState[m.id].games[0].length === 0) {
-      try {
-        const gd = JSON.parse(m.game_details);
-        scoreState[m.id].games = gd.games.map(g => [...g.points]);
-        scoreState[m.id].tiebreak = gd.tiebreak ? [...gd.tiebreak.points] : [];
-      } catch(e) {}
-    }
-    if (isU8) {
-      const st = scoreState[m.id]; const g = st.games[0] || [];
-      const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
-      s += `<span style="margin:0 6px;font-family:monospace;font-weight:600">${p1c}-${p2c}</span>`;
-      if (!isU8GameOver(p1c, p2c)) {
-        s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="0" data-player="p1" style="font-size:0.7rem;padding:1px 5px">+A</button>`;
-        s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="0" data-player="p2" style="font-size:0.7rem;padding:1px 5px">+B</button>`;
-        if (g.length > 0) s += `<button class="pt-btn pt-undo match-pt-btn" data-mid="${m.id}" data-game="0" style="font-size:0.7rem;padding:1px 3px">↩</button>`;
-      }
-    } else {
-      ensureU10State(m.id);
-      s += '<span style="margin:0 8px;font-size:0.8rem">';
-      for (let i = 0; i < 4; i++) {
-        const g = scoreState[m.id].games[i] || [];
-        const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
-        const over = isTennisGameOver(p1c, p2c);
-        s += `<span style="font-family:monospace;margin:0 2px">${tennisDisplay(p1c, p2c)}</span>`;
-      }
-      s += '</span>';
-      // Show buttons for the active game, or tiebreak if 2-2
-      let hasActive = false;
-      for (let i = 0; i < 4; i++) {
-        const g = scoreState[m.id].games[i] || [];
-        const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
-        if (!isTennisGameOver(p1c, p2c)) {
-          s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="${i}" data-player="p1" style="font-size:0.7rem;padding:1px 4px">+A</button>`;
-          s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="${i}" data-player="p2" style="font-size:0.7rem;padding:1px 4px">+B</button>`;
-          if (g.length > 0) s += `<button class="pt-btn pt-undo match-pt-btn" data-mid="${m.id}" data-game="${i}" style="font-size:0.7rem;padding:1px 2px">↩</button>`;
-          hasActive = true;
-          break;
-        }
-      }
-      // All 4 games done & 2-2: show tiebreak controls
-      if (!hasActive && isTiebreakNeeded(m.id)) {
-        const tb = scoreState[m.id].tiebreak || [];
-        const tp1 = countPoints(tb, 'p1'), tp2 = countPoints(tb, 'p2');
-        s += `<span style="margin:0 4px;font-family:monospace;font-weight:600;font-size:0.8rem">抢七 ${tp1}-${tp2}</span>`;
-        if (!isTiebreakOver(tp1, tp2)) {
-          s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="tb" data-player="p1" style="font-size:0.7rem;padding:1px 4px">+A</button>`;
-          s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="tb" data-player="p2" style="font-size:0.7rem;padding:1px 4px">+B</button>`;
-          if (tb.length > 0) s += `<button class="pt-btn pt-undo match-pt-btn" data-mid="${m.id}" data-game="tb" style="font-size:0.7rem;padding:1px 2px">↩</button>`;
-          hasActive = true;
-        }
-      }
-    }
-    s += `<button class="btn btn-sm btn-outline save-score" data-id="${m.id}" style="margin-left:8px">保存</button>`;
+    s += `<span style="margin:0 8px;color:#999">vs</span>`;
   }
   s += `<span style="flex:1">${p2}</span>`;
   s += '</div>';
   return s;
-}
-
-async function doSaveScore(mid) {
-  // Reuse quickSave logic
-  await quickSave(mid);
-  loadContent();
 }
 
 // ═══════════ Knockout ═══════════
