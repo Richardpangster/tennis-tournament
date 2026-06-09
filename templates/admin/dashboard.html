@@ -668,24 +668,7 @@ async function loadKnockout(el) {
   html += '</table></div>';
   html += '</div>';
 
-  // Score editing for incomplete knockout matches
-  const pending = matches.filter(m => m.status !== 'completed' && m.player1_id && m.player2_id);
-  if (pending.length > 0) {
-    html += '<div class="card"><h3>录入比分</h3>';
-    pending.forEach(m => {
-      html += `<div style="margin-bottom:12px">`;
-      html += `<span style="color:#888;font-size:0.85rem">${stageLabel(m.stage)} #${m.match_order}</span><br>`;
-      html += renderMatchRow(m);
-      html += '</div>';
-    });
-    html += '</div>';
-  }
-
   el.innerHTML = html;
-
-  // Bind
-  document.querySelectorAll('.save-score').forEach(b => b.onclick = () => doSaveScore(b.dataset.id));
-  bindPtButtons();
 }
 
 function renderKOMatch(m, label) {
