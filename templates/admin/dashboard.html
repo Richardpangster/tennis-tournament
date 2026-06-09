@@ -514,9 +514,6 @@ function bindPtButtons() {
 function formatScoreDisplay(m) {
   const isU8 = cat === 'U8';
   let scoreText = `${m.score1}-${m.score2}`;
-  if (!isU8 && m.tb_score1 != null && m.tb_score2 != null) {
-    scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
-  }
   if (m.game_details) {
     try {
       const gd = JSON.parse(m.game_details);
@@ -524,8 +521,16 @@ function formatScoreDisplay(m) {
         const p1c = countPoints(g.points, 'p1'), p2c = countPoints(g.points, 'p2');
         return isU8 ? `${p1c}-${p2c}` : tennisDisplay(p1c, p2c);
       });
-      scoreText += ` [${parts.join(', ')}]`;
+      if (gd.tiebreak && gd.tiebreak.points) {
+        const tp1 = countPoints(gd.tiebreak.points, 'p1'), tp2 = countPoints(gd.tiebreak.points, 'p2');
+        parts.push(`抢七 ${tp1}-${tp2}`);
+        scoreText += ` [${parts.join(', ')}]`;
+      } else {
+        scoreText += ` [${parts.join(', ')}]`;
+      }
     } catch(e) {}
+  } else if (!isU8 && m.tb_score1 != null && m.tb_score2 != null) {
+    scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
   }
   return scoreText;
 }
@@ -844,22 +849,7 @@ function renderQuickCard(m, stage) {
 
   if (done) {
     // Show completed result
-    let scoreText = `${m.score1}-${m.score2}`;
-    if (m.tb_score1 != null && m.tb_score2 != null) scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
-    if (m.game_details) {
-      try {
-        const gd = JSON.parse(m.game_details);
-        const parts = gd.games.map(g => {
-          const p1c = countPoints(g.points, 'p1'), p2c = countPoints(g.points, 'p2');
-          return isU8 ? `${p1c}-${p2c}` : tennisDisplay(p1c, p2c);
-        });
-        scoreText += ` [${parts.join(', ')}]`;
-        if (gd.tiebreak && gd.tiebreak.points) {
-          const tp1 = countPoints(gd.tiebreak.points, 'p1'), tp2 = countPoints(gd.tiebreak.points, 'p2');
-          scoreText += ` 抢七 ${tp1}-${tp2}`;
-        }
-      } catch(e) {}
-    }
+    let scoreText = formatScoreDisplay(m);
     const wn = m.winner_name || '?';
     s += `<div style="text-align:center;color:#27ae60;font-weight:600">✓ ${scoreText} → ${wn} 胜</div>`;
   } else {
