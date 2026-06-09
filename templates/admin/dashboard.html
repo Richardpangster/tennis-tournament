@@ -141,7 +141,7 @@ async function loadPlayers(el) {
 
   // Import section
   html += `<div class="card">
-    <h3>📥 批量导入 <span style="font-weight:400;font-size:0.8rem;color:#888">— 从金数据导出CSV，全选内容粘贴到下方</span></h3>
+    <h3>📥 批量导入 <span style="font-weight:400;font-size:0.8rem;color:#888">— 支持 CSV 文本粘贴 或 上传 Excel(.xlsx) / CSV 文件</span></h3>
     <textarea id="csv-text" rows="5" placeholder="粘贴CSV内容&#10;金数据 → 数据 → 导出CSV → 用记事本打开 → 全选复制 → 粘贴到这里"
       style="width:100%;font-family:monospace;font-size:0.8rem;padding:8px;border:1px solid #ddd;border-radius:6px"></textarea>
     <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -149,6 +149,12 @@ async function loadPlayers(el) {
       <span style="font-size:0.75rem;color:#888">或指定组别:</span>
       ${CATS.map(c => `<button class="btn btn-sm btn-outline import-cat-btn" data-cat="${c}" ${(counts[c]||0)>=16?'disabled':''}>仅导入${c}</button>`).join('')}
       <span style="font-size:0.75rem;color:#888">CSV需含「参赛组别」列（值为U8/U10/U12/U14）</span>
+    </div>
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #ddd;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span style="font-size:0.85rem;font-weight:500">📁 上传文件：</span>
+      <input type="file" id="import-file" accept=".csv,.xlsx" style="font-size:0.85rem" />
+      <button class="btn btn-primary btn-sm" id="btn-import-file-auto">自动识别组别</button>
+      ${CATS.map(c => `<button class="btn btn-sm btn-outline import-file-cat-btn" data-cat="${c}" ${(counts[c]||0)>=16?'disabled':''}>仅导入${c}</button>`).join('')}
     </div>
     <div id="import-result" style="margin-top:8px;font-size:0.85rem"></div>
   </div>`;
@@ -189,6 +195,8 @@ async function loadPlayers(el) {
   document.getElementById('btn-add')?.addEventListener('click', addPlayer);
   document.getElementById('btn-import-auto')?.addEventListener('click', () => doImport('auto'));
   document.querySelectorAll('.import-cat-btn').forEach(b => b.onclick = () => doImport(b.dataset.cat));
+  document.getElementById('btn-import-file-auto')?.addEventListener('click', () => doImportFile('auto'));
+  document.querySelectorAll('.import-file-cat-btn').forEach(b => b.onclick = () => doImportFile(b.dataset.cat));
   document.getElementById('btn-draw')?.addEventListener('click', doDraw);
   document.getElementById('btn-clear-groups')?.addEventListener('click', doClearGroups);
   document.querySelectorAll('.del-btn').forEach(b => b.onclick = () => doDelete(b.dataset.id));
@@ -278,21 +286,45 @@ async function doImport(targetCat) {
       method: 'POST',
       body: JSON.stringify({csv_text: csv, category: targetCat})
     });
-    const el = document.getElementById('import-result');
-    let msg = `成功导入 <strong>${r.imported}</strong> 人`;
-    if (r.skipped > 0) msg += `，跳过 ${r.skipped} 人（已满）`;
-    if (r.by_category) {
-      msg += '<br>';
-      for (const [c, info] of Object.entries(r.by_category)) {
-        msg += `<span style="margin-right:12px">${c}: +${info.imported} 人（剩${info.remaining}名额）</span>`;
-      }
+    showImportResult(r);
+  } catch(e) {
+    document.getElementById('import-result').innerHTML = `<span style="color:#e74c3c">${e.message}</span>`;
+    toast(e.message, 'error');
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+function showImportResult(r) {
+  const el = document.getElementById('import-result');
+  let msg = `成功导入 <strong>${r.imported}</strong> 人`;
+  if (r.skipped > 0) msg += `，跳过 ${r.skipped} 人（已满）`;
+  if (r.by_category) {
+    msg += '<br>';
+    for (const [c, info] of Object.entries(r.by_category)) {
+      msg += `<span style="margin-right:12px">${c}: +${info.imported} 人（剩${info.remaining}名额）</span>`;
     }
-    if (r.errors.length > 0) {
-      msg += `<br><span style="color:#e67e22">${r.errors.join('<br>')}</span>`;
-    }
-    el.innerHTML = msg;
-    toast(`导入完成: ${r.imported} 人`);
-    loadContent();  // refresh
+  }
+  if (r.errors.length > 0) {
+    msg += `<br><span style="color:#e67e22">${r.errors.join('<br>')}</span>`;
+  }
+  el.innerHTML = msg;
+  toast(`导入完成: ${r.imported} 人`);
+  loadContent();
+}
+
+async function doImportFile(targetCat) {
+  const input = document.getElementById('import-file');
+  if (!input.files.length) return toast('请先选择文件', 'error');
+  const formData = new FormData();
+  formData.append('file', input.files[0]);
+  formData.append('category', targetCat);
+  const btns = document.querySelectorAll('#btn-import-file-auto, .import-file-cat-btn');
+  btns.forEach(b => b.disabled = true);
+  try {
+    const r = await fetch('/api/players/import-file', {method:'POST', body: formData});
+    const data = r.ok ? await r.json() : await r.json().catch(() => ({detail: r.statusText})).then(e => { throw new Error(e.detail || '导入失败'); });
+    showImportResult(data);
   } catch(e) {
     document.getElementById('import-result').innerHTML = `<span style="color:#e74c3c">${e.message}</span>`;
     toast(e.message, 'error');

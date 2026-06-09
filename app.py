@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, HTTPException, Form
+from fastapi import FastAPI, Request, HTTPException, Form, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -7,6 +7,10 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 import os
 import secrets
+import csv
+import io
+import zipfile
+import openpyxl
 import db
 import draw
 
@@ -221,7 +225,6 @@ def api_delete_player(player_id: int, request: Request):
 def api_import_players(data: ImportCSV, request: Request):
     """Bulk import from CSV text. category='auto' reads from CSV column, otherwise forces target category."""
     require_role(request, ["admin"])
-    import csv, io
 
     csv_text = data.csv_text
     force_cat = data.category  # 'auto' or specific category
@@ -230,9 +233,15 @@ def api_import_players(data: ImportCSV, request: Request):
     if not reader.fieldnames:
         raise HTTPException(400, "无法解析CSV，请确认格式正确")
 
-    # Map Chinese headers
+    headers = list(reader.fieldnames)
+    rows = list(reader)
+    return _do_import_rows(rows, headers, force_cat)
+
+
+def _do_import_rows(rows: list[dict], headers: list[str], force_cat: str):
+    """Shared import logic for CSV and Excel rows. Returns result dict."""
     col_map = {}
-    for fn in reader.fieldnames:
+    for fn in headers:
         fn_clean = fn.strip().replace("'", "").replace("﻿", "")
         if "姓名" in fn_clean: col_map["name"] = fn
         elif "手机" in fn_clean or "电话" in fn_clean: col_map["phone"] = fn
@@ -240,19 +249,17 @@ def api_import_players(data: ImportCSV, request: Request):
         elif "出生" in fn_clean or "日期" in fn_clean: col_map["birth_date"] = fn
 
     if "name" not in col_map or "phone" not in col_map:
-        raise HTTPException(400, "CSV表头需包含「姓名」和「手机号」列")
+        raise HTTPException(400, "表头需包含「姓名」和「手机号」列")
 
-    # Pre-load existing phones per category
     existing = {}
     for c in CATEGORIES:
         existing[c] = {p["phone"] for p in db.get_players(c)}
 
     quotas = {c: db.get_player_count(c) for c in CATEGORIES}
-
     result = {c: {"imported": 0, "skipped": 0} for c in CATEGORIES}
     errors = []
 
-    for row_num, row in enumerate(reader, start=2):
+    for row_num, row in enumerate(rows, start=2):
         name = (row.get(col_map.get("name", "")) or "").strip()
         phone = (row.get(col_map.get("phone", "")) or "").strip()
         birth = (row.get(col_map.get("birth_date", "")) or "").strip()
@@ -260,7 +267,6 @@ def api_import_players(data: ImportCSV, request: Request):
         # Determine category
         if force_cat == "auto":
             cat_raw = (row.get(col_map.get("category", "")) or "").strip()
-            # Extract category code from value (e.g. "U8（2018年...）" → "U8")
             cat = None
             for c in CATEGORIES:
                 if cat_raw.startswith(c):
@@ -276,7 +282,6 @@ def api_import_players(data: ImportCSV, request: Request):
             errors.append(f"第{row_num}行: 无效组别'{cat}'，跳过")
             continue
 
-        # Validate
         if not name or not phone:
             errors.append(f"第{row_num}行: 姓名或手机为空，跳过")
             continue
@@ -296,7 +301,6 @@ def api_import_players(data: ImportCSV, request: Request):
         quotas[cat] += 1
         result[cat]["imported"] += 1
 
-    # Build summary
     total_imported = sum(r["imported"] for r in result.values())
     total_skipped = sum(r["skipped"] for r in result.values())
     by_cat = {c: {"imported": result[c]["imported"], "remaining": 16 - quotas[c]}
@@ -309,6 +313,51 @@ def api_import_players(data: ImportCSV, request: Request):
         "by_category": by_cat,
         "errors": errors[:10],
     }
+
+
+@app.post("/api/players/import-file")
+async def api_import_file(request: Request, file: UploadFile = File(...), category: str = Form("auto")):
+    """Bulk import from uploaded CSV or Excel (.xlsx) file."""
+    require_role(request, ["admin"])
+
+    filename = (file.filename or "").lower()
+    content = await file.read()
+
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "文件大小不能超过 10MB")
+
+    if filename.endswith(".xlsx"):
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+        except (zipfile.BadZipFile, Exception) as e:
+            raise HTTPException(400, f"无法解析Excel文件，请确认是有效的 .xlsx 文件")
+        try:
+            ws = wb.active
+            rows_iter = ws.iter_rows(values_only=True)
+            try:
+                header_row = next(rows_iter)
+            except StopIteration:
+                raise HTTPException(400, "Excel文件为空（无表头行）")
+            headers = [str(h or "").strip() for h in header_row]
+            rows = []
+            for r in rows_iter:
+                rows.append({headers[i]: (str(r[i]) if i < len(r) and r[i] is not None else "") for i in range(len(headers))})
+        finally:
+            wb.close()
+    elif filename.endswith(".csv"):
+        text = content.decode("utf-8-sig")
+        reader = csv.DictReader(io.StringIO(text))
+        if not reader.fieldnames:
+            raise HTTPException(400, "无法解析CSV，请确认格式正确")
+        headers = list(reader.fieldnames)
+        rows = list(reader)
+    else:
+        raise HTTPException(400, "仅支持 .csv 或 .xlsx 文件")
+
+    if not rows:
+        raise HTTPException(400, "文件内容为空")
+
+    return _do_import_rows(rows, headers, category)
 
 @app.post("/api/draw-groups/{category}")
 def api_draw_groups(category: str, request: Request):
