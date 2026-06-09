@@ -19,6 +19,35 @@
 <script>
 const CAT = '{{ category }}';
 let countdown = 30;
+const isU8 = CAT === 'U8';
+
+function countPoints(points, player) { return points.filter(p => p === player).length; }
+function tennisDisplay(p1, p2) {
+  const names = ['0', '15', '30', '40'];
+  if (p1 <= 3 && p2 <= 3 && !(p1 >= 3 && p2 >= 3)) return names[p1] + '-' + names[p2];
+  if (p1 >= 3 && p2 >= 3 && p1 === p2) return '40-40';
+  if (p1 >= 4 && p1 > p2) return 'Game';
+  if (p2 >= 4 && p2 > p1) return 'Game';
+  return names[Math.min(p1,3)] + '-' + names[Math.min(p2,3)];
+}
+
+function formatPublicScore(m) {
+  let text = `${m.score1}-${m.score2}`;
+  if (!isU8 && m.tb_score1 != null && m.tb_score2 != null) {
+    text += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
+  }
+  if (m.game_details) {
+    try {
+      const gd = JSON.parse(m.game_details);
+      const parts = gd.games.map(g => {
+        const p1c = countPoints(g.points, 'p1'), p2c = countPoints(g.points, 'p2');
+        return isU8 ? `${p1c}-${p2c}` : tennisDisplay(p1c, p2c);
+      });
+      text += ` [${parts.join(', ')}]`;
+    } catch(e) {}
+  }
+  return text;
+}
 
 async function fetchData() {
   try {
@@ -76,8 +105,7 @@ function render(standings, matches) {
         html += `<div style="margin-bottom:6px"><span style="font-size:0.8rem;color:#888">第${r}轮 </span>`;
         rm.forEach(m => {
           if (m.status === 'completed') {
-            let tb = (m.tb_score1 != null && m.tb_score2 != null) ? ` (抢七 ${m.tb_score1}-${m.tb_score2})` : '';
-            html += `<span style="margin-right:12px">${m.player1_name} <strong>${m.score1}-${m.score2}</strong>${tb} ${m.player2_name}</span>`;
+            html += `<span style="margin-right:12px">${m.player1_name} <strong>${formatPublicScore(m)}</strong> ${m.player2_name}</span>`;
           } else {
             html += `<span style="margin-right:12px;color:#ccc">${m.player1_name||'?'} vs ${m.player2_name||'?'}</span>`;
           }
@@ -147,11 +175,7 @@ function renderPublicKO(m, label) {
   s += `<div class="player${m.winner_id===m.player1_id?' winner':''}">${p1}</div>`;
   s += `<div class="player${m.winner_id===m.player2_id?' winner':''}">${p2}</div>`;
   if (m.status === 'completed') {
-    let scoreText = `${m.score1}-${m.score2}`;
-    if (m.tb_score1 != null && m.tb_score2 != null) {
-      scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
-    }
-    s += `<div style="color:#27ae60;font-weight:600;font-size:0.8rem">${scoreText}</div>`;
+    s += `<div style="color:#27ae60;font-weight:600;font-size:0.8rem">${formatPublicScore(m)}</div>`;
   }
   s += '</div>';
   return s;

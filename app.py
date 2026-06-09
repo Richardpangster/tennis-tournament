@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 import os
 import secrets
+import json
 import csv
 import io
 import zipfile
@@ -44,6 +45,7 @@ class ScoreUpdate(BaseModel):
     score2: int
     tb_score1: int | None = None
     tb_score2: int | None = None
+    game_details: dict | None = None
 
 
 class ImportCSV(BaseModel):
@@ -433,7 +435,8 @@ def api_update_score(match_id: int, data: ScoreUpdate, request: Request):
 
     winner_id = match["player1_id"] if score1 > score2 else match["player2_id"]
 
-    db.update_match_score(match_id, score1, score2, winner_id, data.tb_score1, data.tb_score2)
+    db.update_match_score(match_id, score1, score2, winner_id, data.tb_score1, data.tb_score2,
+                          json.dumps(data.game_details) if data.game_details else None)
 
     # Auto-advance knockout winner to next round
     if winner_id and match["stage"] in ("quarterfinal", "semifinal"):

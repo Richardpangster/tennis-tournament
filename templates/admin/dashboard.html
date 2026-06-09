@@ -50,6 +50,71 @@ let func = '{{ "quick" if role == "referee" else "players" }}';
 function scoreUnit(c) { return c === 'U8' ? '分' : '局'; }
 function scoreRule(c) { return c === 'U8' ? '一局11分定胜负' : '4局无占先，2:2抢7决胜（如2:2抢7胜，直接输抢七比分如7-5）'; }
 
+// ═══════════ Tennis & U8 scoring helpers ═══════════
+function countPoints(points, player) {
+  return points.filter(p => p === player).length;
+}
+
+// U8: 11-point game
+function isU8GameOver(p1, p2) {
+  return (p1 >= 11 || p2 >= 11) && Math.abs(p1 - p2) >= 2;
+}
+
+// Tennis: 0-15-30-40-Game, no-ad
+function tennisDisplay(p1, p2) {
+  const names = ['0', '15', '30', '40'];
+  if (p1 <= 3 && p2 <= 3 && !(p1 >= 3 && p2 >= 3)) return names[p1] + '-' + names[p2];
+  if (p1 >= 3 && p2 >= 3 && p1 === p2) return '40-40';
+  if (p1 >= 4 && p1 > p2) return 'Game';
+  if (p2 >= 4 && p2 > p1) return 'Game';
+  return names[Math.min(p1,3)] + '-' + names[Math.min(p2,3)];
+}
+function isTennisGameOver(p1, p2) {
+  if (p1 >= 4 && p1 - p2 >= 2) return true;
+  if (p2 >= 4 && p2 - p1 >= 2) return true;
+  if (p1 >= 3 && p2 >= 3 && Math.abs(p1 - p2) >= 1) return true; // no-ad deuce
+  return false;
+}
+function tennisGameWinner(p1, p2) {
+  if (!isTennisGameOver(p1, p2)) return null;
+  return p1 > p2 ? 'p1' : 'p2';
+}
+
+// Tiebreak: first to 7, win by 2
+function isTiebreakOver(p1, p2) {
+  return (p1 >= 7 || p2 >= 7) && Math.abs(p1 - p2) >= 2;
+}
+
+// Score state in memory: {mid: {games: [[point,...], ...], tiebreak: [point,...]}}
+const scoreState = {};
+
+function initScoreState(mid) {
+  if (!scoreState[mid]) {
+    scoreState[mid] = { games: [[]], tiebreak: [] };
+  }
+}
+function ensureU10State(mid) {
+  const st = scoreState[mid];
+  if (!st) return;
+  while (st.games.length < 4) st.games.push([]);
+}
+
+function getGameCounts(mid) {
+  const st = scoreState[mid];
+  if (!st) return [0, 0];
+  let p1w = 0, p2w = 0;
+  for (const g of st.games) {
+    const p1 = countPoints(g, 'p1'), p2 = countPoints(g, 'p2');
+    if (cat === 'U8') { if (isU8GameOver(p1, p2)) { if (p1 > p2) p1w++; else p2w++; } }
+    else { const w = tennisGameWinner(p1, p2); if (w === 'p1') p1w++; else if (w === 'p2') p2w++; }
+  }
+  return [p1w, p2w];
+}
+function isTiebreakNeeded(mid) {
+  const [p1w, p2w] = getGameCounts(mid);
+  return p1w === 2 && p2w === 2;
+}
+
 // ═══════════ Init ═══════════
 async function init() {
   renderCategoryTabs();
@@ -414,28 +479,98 @@ async function loadGroupStage(el) {
   // Bind events
   document.getElementById('btn-top8')?.addEventListener('click', doTop8Draw);
   document.querySelectorAll('.save-score').forEach(b => b.onclick = () => doSaveScore(b.dataset.id));
+  bindPtButtons();
+}
+
+function bindPtButtons() {
+  document.querySelectorAll('.pt-btn').forEach(b => {
+    b.onclick = () => {
+      const mid = parseInt(b.dataset.mid);
+      const gameIdx = b.dataset.game;
+      const player = b.dataset.player;
+      initScoreState(mid);
+      if (cat !== 'U8') ensureU10State(mid);
+      if (gameIdx === 'tb') {
+        scoreState[mid].tiebreak.push(player);
+      } else {
+        const gi = parseInt(gameIdx);
+        if (!scoreState[mid].games[gi]) scoreState[mid].games[gi] = [];
+        scoreState[mid].games[gi].push(player);
+      }
+      loadContent();
+    };
+  });
+}
+
+function formatScoreDisplay(m) {
+  const isU8 = cat === 'U8';
+  let scoreText = `${m.score1}-${m.score2}`;
+  if (!isU8 && m.tb_score1 != null && m.tb_score2 != null) {
+    scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
+  }
+  if (m.game_details) {
+    try {
+      const gd = JSON.parse(m.game_details);
+      const parts = gd.games.map(g => {
+        const p1c = countPoints(g.points, 'p1'), p2c = countPoints(g.points, 'p2');
+        return isU8 ? `${p1c}-${p2c}` : tennisDisplay(p1c, p2c);
+      });
+      scoreText += ` [${parts.join(', ')}]`;
+    } catch(e) {}
+  }
+  return scoreText;
 }
 
 function renderMatchRow(m) {
   const p1 = m.player1_name || '—';
   const p2 = m.player2_name || '—';
   const done = m.status === 'completed';
-  const unit = scoreUnit(cat);
+  const isU8 = cat === 'U8';
   let s = `<div class="match-item">`;
   s += `<span style="flex:1;text-align:right">${p1}</span>`;
   if (done) {
-    let scoreText = `${m.score1} - ${m.score2}`;
-    if (m.tb_score1 != null && m.tb_score2 != null) {
-      scoreText += ` <span style="font-size:0.75rem;color:#888">(抢七 ${m.tb_score1}-${m.tb_score2})</span>`;
-    }
-    s += `<span class="match-done" style="margin:0 8px">${scoreText}</span>`;
+    s += `<span class="match-done" style="margin:0 8px">${formatScoreDisplay(m)}</span>`;
   } else {
-    s += `<input class="match-score-input" value="${m.score1??''}" data-mid="${m.id}" data-slot="1" placeholder="局分">`;
-    s += `<span class="match-vs">:</span>`;
-    s += `<input class="match-score-input" value="${m.score2??''}" data-mid="${m.id}" data-slot="2" placeholder="局分">`;
-    s += `<input class="match-score-input" value="${m.tb_score1??''}" data-mid="${m.id}" data-slot="tb1" placeholder="抢七" style="width:40px;font-size:0.75rem;color:#888">`;
-    s += `<span style="font-size:0.7rem;color:#ccc">:</span>`;
-    s += `<input class="match-score-input" value="${m.tb_score2??''}" data-mid="${m.id}" data-slot="tb2" placeholder="抢七" style="width:40px;font-size:0.75rem;color:#888">`;
+    // Point-by-point compact UI
+    initScoreState(m.id);
+    if (m.game_details && scoreState[m.id].games[0].length === 0) {
+      try {
+        const gd = JSON.parse(m.game_details);
+        scoreState[m.id].games = gd.games.map(g => [...g.points]);
+        scoreState[m.id].tiebreak = gd.tiebreak ? [...gd.tiebreak.points] : [];
+      } catch(e) {}
+    }
+    if (isU8) {
+      const st = scoreState[m.id]; const g = st.games[0] || [];
+      const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
+      s += `<span style="margin:0 6px;font-family:monospace;font-weight:600">${p1c}-${p2c}</span>`;
+      if (!isU8GameOver(p1c, p2c)) {
+        s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="0" data-player="p1" style="font-size:0.7rem;padding:1px 5px">+A</button>`;
+        s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="0" data-player="p2" style="font-size:0.7rem;padding:1px 5px">+B</button>`;
+        if (g.length > 0) s += `<button class="pt-btn pt-undo match-pt-btn" data-mid="${m.id}" data-game="0" style="font-size:0.7rem;padding:1px 3px">↩</button>`;
+      }
+    } else {
+      ensureU10State(m.id);
+      s += '<span style="margin:0 8px;font-size:0.8rem">';
+      for (let i = 0; i < 4; i++) {
+        const g = scoreState[m.id].games[i] || [];
+        const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
+        const over = isTennisGameOver(p1c, p2c);
+        s += `<span style="font-family:monospace;margin:0 2px">${tennisDisplay(p1c, p2c)}</span>`;
+      }
+      s += '</span>';
+      // Show buttons for the active game
+      for (let i = 0; i < 4; i++) {
+        const g = scoreState[m.id].games[i] || [];
+        const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
+        if (!isTennisGameOver(p1c, p2c)) {
+          s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="${i}" data-player="p1" style="font-size:0.7rem;padding:1px 4px">+A</button>`;
+          s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="${i}" data-player="p2" style="font-size:0.7rem;padding:1px 4px">+B</button>`;
+          if (g.length > 0) s += `<button class="pt-btn pt-undo match-pt-btn" data-mid="${m.id}" data-game="${i}" style="font-size:0.7rem;padding:1px 2px">↩</button>`;
+          break; // Only show buttons for first incomplete game
+        }
+      }
+    }
     s += `<button class="btn btn-sm btn-outline save-score" data-id="${m.id}" style="margin-left:8px">保存</button>`;
   }
   s += `<span style="flex:1">${p2}</span>`;
@@ -444,22 +579,9 @@ function renderMatchRow(m) {
 }
 
 async function doSaveScore(mid) {
-  const inp1 = document.querySelector(`input[data-mid="${mid}"][data-slot="1"]`);
-  const inp2 = document.querySelector(`input[data-mid="${mid}"][data-slot="2"]`);
-  const tb1 = document.querySelector(`input[data-mid="${mid}"][data-slot="tb1"]`);
-  const tb2 = document.querySelector(`input[data-mid="${mid}"][data-slot="tb2"]`);
-  const s1 = parseInt(inp1.value), s2 = parseInt(inp2.value);
-  if (isNaN(s1) || isNaN(s2)) return toast('请输入双方局分', 'error');
-  const body = {score1:s1, score2:s2};
-  if (tb1 && tb2) {
-    const t1 = parseInt(tb1.value), t2 = parseInt(tb2.value);
-    if (!isNaN(t1) && !isNaN(t2)) { body.tb_score1 = t1; body.tb_score2 = t2; }
-  }
-  try {
-    await api('/api/matches/'+mid+'/score', {method:'PUT', body:JSON.stringify(body)});
-    toast('比分已保存');
-    loadContent();
-  } catch(e) { toast(e.message, 'error'); }
+  // Reuse quickSave logic
+  await quickSave(mid);
+  loadContent();
 }
 
 // ═══════════ Knockout ═══════════
@@ -535,6 +657,7 @@ async function loadKnockout(el) {
 
   // Bind
   document.querySelectorAll('.save-score').forEach(b => b.onclick = () => doSaveScore(b.dataset.id));
+  bindPtButtons();
 }
 
 function renderKOMatch(m, label) {
@@ -547,11 +670,7 @@ function renderKOMatch(m, label) {
   s += `<div class="player${done && m.winner_id===m.player1_id?' winner':''}">${p1}</div>`;
   s += `<div class="player${done && m.winner_id===m.player2_id?' winner':''}">${p2}</div>`;
   if (done) {
-    let scoreText = `${m.score1}-${m.score2}`;
-    if (m.tb_score1 != null && m.tb_score2 != null) {
-      scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
-    }
-    s += `<div style="color:#27ae60;font-weight:600;font-size:0.8rem">${scoreText}</div>`;
+    s += `<div style="color:#27ae60;font-weight:600;font-size:0.8rem">${formatScoreDisplay(m)}</div>`;
   }
   s += '</div>';
   return s;
@@ -634,15 +753,7 @@ async function loadQuickScore(el) {
     quickPending = e.target.checked; loadContent();
   });
   document.querySelectorAll('.qsave-btn').forEach(b => b.onclick = ()=> quickSave(b.dataset.id));
-  // Enter key submit
-  document.querySelectorAll('.qscore-inp').forEach(inp => {
-    inp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const mid = inp.dataset.mid;
-        quickSave(mid);
-      }
-    });
-  });
+  bindPtButtons();
 }
 
 let quickStage = 'group';
@@ -664,65 +775,158 @@ function filterQuickMatches(matches, stage) {
   return filtered;
 }
 
+function renderGameRow(mid, gameIdx, label, isU8) {
+  const st = scoreState[mid];
+  if (!st) return '';
+  const g = st.games[gameIdx] || [];
+  const p1 = countPoints(g, 'p1'), p2 = countPoints(g, 'p2');
+  const over = isU8 ? isU8GameOver(p1, p2) : isTennisGameOver(p1, p2);
+  const display = isU8 ? `${p1}-${p2}` : tennisDisplay(p1, p2);
+  const prevOver = gameIdx > 0 && st.games[gameIdx-1] && st.games[gameIdx-1].length > 0;
+
+  let s = `<div class="game-row" data-game="${gameIdx}" style="display:flex;align-items:center;gap:4px;margin:4px 0;font-size:0.85rem">`;
+  s += `<span style="width:50px;text-align:right;color:#888">${label}</span>`;
+  s += `<span class="gscore-display" style="min-width:60px;text-align:center;font-weight:600;font-family:monospace">${display}</span>`;
+  if (over) {
+    s += `<span style="color:#27ae60;font-weight:600;font-size:0.75rem">✓Game</span>`;
+  } else {
+    s += `<button class="pt-btn pt-plus" data-mid="${mid}" data-game="${gameIdx}" data-player="p1" ${over?'disabled':''}>+A</button>`;
+    s += `<button class="pt-btn pt-plus" data-mid="${mid}" data-game="${gameIdx}" data-player="p2" ${over?'disabled':''}>+B</button>`;
+    if (g.length > 0) s += `<button class="pt-btn pt-undo" data-mid="${mid}" data-game="${gameIdx}">↩</button>`;
+  }
+  s += '</div>';
+  return s;
+}
+
 function renderQuickCard(m, stage) {
   const p1 = m.player1_name || '—';
   const p2 = m.player2_name || '—';
   const label = stage === 'group'
     ? `${m.group_name}组 第${m.round}轮`
     : ({quarterfinal:'8强',semifinal:'半决赛',final:'决赛'}[m.stage]||m.stage) + ` #${m.match_order}`;
-  const isTiebreak = m.tb_score1 != null && m.tb_score2 != null;
+  const isU8 = cat === 'U8';
+  const done = m.status === 'completed';
 
   let s = '<div class="card" style="padding:12px 16px;margin-bottom:10px">';
   s += `<div style="font-size:0.75rem;color:#888;margin-bottom:6px">${label}</div>`;
   s += `<div style="font-size:1rem;font-weight:600;margin-bottom:10px;text-align:center">${p1}  vs  ${p2}</div>`;
 
-  s += '<div style="display:flex;align-items:center;gap:6px;justify-content:center;flex-wrap:wrap">';
-  s += `<input class="match-score-input qscore-inp" data-mid="${m.id}" data-slot="1" placeholder="局分" style="width:56px;font-size:1rem;padding:8px" autocomplete="off">`;
-  s += '<span style="font-weight:700">:</span>';
-  s += `<input class="match-score-input qscore-inp" data-mid="${m.id}" data-slot="2" placeholder="局分" style="width:56px;font-size:1rem;padding:8px" autocomplete="off">`;
-  s += '<span style="font-size:0.75rem;color:#aaa;margin:0 4px">抢七</span>';
-  s += `<input class="match-score-input" data-mid="${m.id}" data-slot="qtb1" placeholder="—" style="width:42px;font-size:0.8rem;padding:6px" autocomplete="off">`;
-  s += '<span>:</span>';
-  s += `<input class="match-score-input" data-mid="${m.id}" data-slot="qtb2" placeholder="—" style="width:42px;font-size:0.8rem;padding:6px" autocomplete="off">`;
-  s += `<button class="btn btn-primary btn-sm qsave-btn" data-id="${m.id}" style="margin-left:8px">保存</button>`;
-  s += '</div>';
+  if (done) {
+    // Show completed result
+    let scoreText = `${m.score1}-${m.score2}`;
+    if (m.tb_score1 != null && m.tb_score2 != null) scoreText += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
+    if (m.game_details) {
+      try {
+        const gd = JSON.parse(m.game_details);
+        const parts = gd.games.map(g => {
+          const p1c = countPoints(g.points, 'p1'), p2c = countPoints(g.points, 'p2');
+          return isU8 ? `${p1c}-${p2c}` : tennisDisplay(p1c, p2c);
+        });
+        scoreText += ` [${parts.join(', ')}]`;
+        if (gd.tiebreak && gd.tiebreak.points) {
+          const tp1 = countPoints(gd.tiebreak.points, 'p1'), tp2 = countPoints(gd.tiebreak.points, 'p2');
+          scoreText += ` 抢七 ${tp1}-${tp2}`;
+        }
+      } catch(e) {}
+    }
+    const wn = m.winner_name || '?';
+    s += `<div style="text-align:center;color:#27ae60;font-weight:600">✓ ${scoreText} → ${wn} 胜</div>`;
+  } else {
+    // Point-by-point UI
+    initScoreState(m.id);
+    // Restore from existing game_details if present
+    if (m.game_details && scoreState[m.id].games[0].length === 0) {
+      try {
+        const gd = JSON.parse(m.game_details);
+        scoreState[m.id].games = gd.games.map(g => [...g.points]);
+        scoreState[m.id].tiebreak = gd.tiebreak ? [...gd.tiebreak.points] : [];
+      } catch(e) {}
+    }
+    if (isU8) {
+      s += renderGameRow(m.id, 0, '抢11', true);
+    } else {
+      ensureU10State(m.id);
+      for (let i = 0; i < 4; i++) {
+        s += renderGameRow(m.id, i, `第${i+1}局`, false);
+      }
+      // Tiebreak row (shown when needed)
+      const tbNeeded = isTiebreakNeeded(m.id);
+      const allDone = scoreState[m.id].games.every((g, i) => {
+        const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
+        return isTennisGameOver(p1c, p2c);
+      });
+      if (tbNeeded || (allDone && scoreState[m.id].tiebreak.length > 0)) {
+        s += '<div style="font-size:0.85rem;font-weight:600;margin:4px 0">抢七</div>';
+        const tb = scoreState[m.id].tiebreak;
+        const tp1 = countPoints(tb, 'p1'), tp2 = countPoints(tb, 'p2');
+        const tbOver = isTiebreakOver(tp1, tp2);
+        s += `<div class="game-row" style="display:flex;align-items:center;gap:4px;margin:4px 0;font-size:0.85rem">`;
+        s += `<span style="width:50px;text-align:right;color:#888"></span>`;
+        s += `<span class="gscore-display" style="min-width:60px;text-align:center;font-weight:600;font-family:monospace">${tp1}-${tp2}</span>`;
+        if (tbOver) {
+          s += `<span style="color:#27ae60;font-weight:600;font-size:0.75rem">✓</span>`;
+        } else {
+          s += `<button class="pt-btn pt-plus" data-mid="${m.id}" data-game="tb" data-player="p1">+A</button>`;
+          s += `<button class="pt-btn pt-plus" data-mid="${m.id}" data-game="tb" data-player="p2">+B</button>`;
+          if (tb.length > 0) s += `<button class="pt-btn pt-undo" data-mid="${m.id}" data-game="tb">↩</button>`;
+        }
+        s += '</div>';
+      }
+    }
+    const [w1, w2] = getGameCounts(m.id);
+    s += `<div style="text-align:center;margin-top:8px;font-size:0.85rem;color:#888">总局数: ${w1} - ${w2}</div>`;
+    s += `<div style="text-align:center;margin-top:6px"><button class="btn btn-primary btn-sm qsave-btn" data-id="${m.id}">保存</button></div>`;
+    s += `<div id="qresult-${m.id}" style="text-align:center;margin-top:4px"></div>`;
+  }
 
-  s += `<div id="qresult-${m.id}" style="text-align:center;margin-top:8px"></div>`;
   s += '</div>';
   return s;
 }
 
 async function quickSave(mid) {
-  const inp1 = document.querySelector(`input[data-mid="${mid}"][data-slot="1"]`);
-  const inp2 = document.querySelector(`input[data-mid="${mid}"][data-slot="2"]`);
-  const tb1 = document.querySelector(`input[data-mid="${mid}"][data-slot="qtb1"]`);
-  const tb2 = document.querySelector(`input[data-mid="${mid}"][data-slot="qtb2"]`);
-  const s1 = parseInt(inp1.value), s2 = parseInt(inp2.value);
-  if (isNaN(s1) || isNaN(s2)) return toast('请输入双方局分','error');
+  const st = scoreState[mid];
+  if (!st) return toast('无计分数据', 'error');
+  const isU8 = cat === 'U8';
 
-  const body = {score1:s1, score2:s2};
-  const t1 = parseInt(tb1.value), t2 = parseInt(tb2.value);
-  if (!isNaN(t1) && !isNaN(t2)) { body.tb_score1 = t1; body.tb_score2 = t2; }
+  let s1 = 0, s2 = 0, tb1 = null, tb2 = null;
+  const gameDetails = { games: [], tiebreak: null };
+
+  if (isU8) {
+    const g = st.games[0] || [];
+    const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
+    if (!isU8GameOver(p1c, p2c)) return toast('比赛未结束（需先到11分且领先2分）', 'error');
+    s1 = p1c; s2 = p2c;
+    gameDetails.games = [{ points: [...g] }];
+  } else {
+    for (let i = 0; i < 4; i++) {
+      const g = st.games[i] || [];
+      const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
+      if (!isTennisGameOver(p1c, p2c)) return toast(`第${i+1}局未结束`, 'error');
+      if (tennisGameWinner(p1c, p2c) === 'p1') s1++; else s2++;
+      gameDetails.games.push({ points: [...g] });
+    }
+    if (s1 === s2) { // 2:2, need tiebreak
+      const tb = st.tiebreak || [];
+      const tp1 = countPoints(tb, 'p1'), tp2 = countPoints(tb, 'p2');
+      if (!isTiebreakOver(tp1, tp2)) return toast('抢七未结束（需先到7分且领先2分）', 'error');
+      tb1 = tp1; tb2 = tp2;
+      gameDetails.tiebreak = { points: [...tb] };
+      if (tp1 > tp2) s1++; else s2++;
+    }
+  }
+
+  const body = { score1: s1, score2: s2, game_details: gameDetails };
+  if (tb1 != null) { body.tb_score1 = tb1; body.tb_score2 = tb2; }
 
   try {
     const r = await api('/api/matches/'+mid+'/score', {method:'PUT', body:JSON.stringify(body)});
-    const winner = r.winner_id;
-    // Update just this card's result
-    const m = await api('/api/knockout/'+cat);
-    const match = [...m, ...(await api('/api/matches/'+cat+'?stage=group'))].find(x=>x.id===mid);
     const resultEl = document.getElementById('qresult-'+mid);
-    if (resultEl && match) {
-      let text = `${match.player1_name} ${match.score1}-${match.score2} ${match.player2_name}`;
-      if (match.tb_score1 != null) text += ` (抢七 ${match.tb_score1}-${match.tb_score2})`;
-      const wn = match.winner_name || '?';
-      resultEl.innerHTML = `<span style="color:#27ae60;font-weight:600">✓ ${text}  → ${wn} 胜</span>`;
-    }
-    // Disable inputs
-    [inp1,inp2,tb1,tb2].forEach(el => { if(el) el.disabled = true; });
-    // Hide save button for this card
-    const btn = document.querySelector(`button.qsave-btn[data-id="${mid}"]`);
-    if (btn) btn.style.display = 'none';
-
+    let text = `${s1}-${s2}`;
+    if (tb1 != null) text += ` (抢七 ${tb1}-${tb2})`;
+    const wn = r.winner_id;
+    if (resultEl) resultEl.innerHTML = `<span style="color:#27ae60;font-weight:600">✓ ${text}  → 已保存</span>`;
+    // Refresh card to completed view
+    setTimeout(() => loadContent(), 600);
     toast('已保存');
   } catch(e) { toast(e.message, 'error'); }
 }

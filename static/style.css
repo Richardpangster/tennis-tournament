@@ -124,6 +124,22 @@ tr:hover { background: #f8fbff; }
 .match-done { color: #27ae60; font-weight: 600; }
 .match-pending { color: #999; }
 
+/* Point-by-point buttons */
+.pt-btn {
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 2px 8px;
+    font-size: 0.8rem;
+    background: #fff;
+    transition: all 0.15s;
+}
+.pt-btn:hover { background: #eaf2f8; border-color: #2e86c1; }
+.pt-btn:disabled { opacity: 0.4; cursor: default; }
+.pt-plus { color: #2e86c1; }
+.pt-undo { color: #e74c3c; font-size: 0.75rem; padding: 2px 6px; }
+.game-row { padding: 2px 0; }
+
 /* ── Grid ── */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }

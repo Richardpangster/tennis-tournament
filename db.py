@@ -56,6 +56,10 @@ def init_db():
         conn.execute("ALTER TABLE matches ADD COLUMN tb_score2 INTEGER")
     except:
         pass
+    try:
+        conn.execute("ALTER TABLE matches ADD COLUMN game_details TEXT")
+    except:
+        pass
     conn.commit()
     conn.close()
 
@@ -192,11 +196,12 @@ def get_match(match_id: int) -> dict | None:
 
 
 def update_match_score(match_id: int, score1: int, score2: int, winner_id: int | None,
-                       tb_score1: int = None, tb_score2: int = None):
+                       tb_score1: int = None, tb_score2: int = None,
+                       game_details: str = None):
     conn = get_db()
     conn.execute(
-        "UPDATE matches SET score1=?, score2=?, winner_id=?, status='completed', tb_score1=?, tb_score2=? WHERE id=?",
-        (score1, score2, winner_id, tb_score1, tb_score2, match_id),
+        "UPDATE matches SET score1=?, score2=?, winner_id=?, status='completed', tb_score1=?, tb_score2=?, game_details=? WHERE id=?",
+        (score1, score2, winner_id, tb_score1, tb_score2, game_details, match_id),
     )
     conn.commit()
     conn.close()
