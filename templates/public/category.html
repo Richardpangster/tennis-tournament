@@ -23,12 +23,13 @@ const isU8 = CAT === 'U8';
 
 function countPoints(points, player) { return points.filter(p => p === player).length; }
 function tennisDisplay(p1, p2) {
-  const names = ['0', '15', '30', '40'];
-  if (p1 <= 3 && p2 <= 3 && !(p1 >= 3 && p2 >= 3)) return names[p1] + '-' + names[p2];
-  if (p1 >= 3 && p2 >= 3 && p1 === p2) return '40-40';
-  if (p1 >= 4 && p1 > p2) return 'Game';
-  if (p2 >= 4 && p2 > p1) return 'Game';
-  return names[Math.min(p1,3)] + '-' + names[Math.min(p2,3)];
+  const nm = ['0', '15', '30', '40', '45'];
+  if (p1 >= 3 && p2 >= 3) {
+    if (p1 === p2) return '40-40';
+    if (p1 > p2) return '45-40';
+    if (p2 > p1) return '40-45';
+  }
+  return nm[Math.min(p1,4)] + '-' + nm[Math.min(p2,4)];
 }
 
 function formatPublicScore(m) {

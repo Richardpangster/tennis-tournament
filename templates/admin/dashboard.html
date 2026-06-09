@@ -60,14 +60,15 @@ function isU8GameOver(p1, p2) {
   return (p1 >= 11 || p2 >= 11) && Math.abs(p1 - p2) >= 2;
 }
 
-// Tennis: 0-15-30-40-Game, no-ad
+// Tennis: 0-15-30-40-45 (no-ad)
 function tennisDisplay(p1, p2) {
-  const names = ['0', '15', '30', '40'];
-  if (p1 <= 3 && p2 <= 3 && !(p1 >= 3 && p2 >= 3)) return names[p1] + '-' + names[p2];
-  if (p1 >= 3 && p2 >= 3 && p1 === p2) return '40-40';
-  if (p1 >= 4 && p1 > p2) return 'Game';
-  if (p2 >= 4 && p2 > p1) return 'Game';
-  return names[Math.min(p1,3)] + '-' + names[Math.min(p2,3)];
+  const nm = ['0', '15', '30', '40', '45'];
+  if (p1 >= 3 && p2 >= 3) {
+    if (p1 === p2) return '40-40';
+    if (p1 > p2) return '45-40';   // no-ad deuce
+    if (p2 > p1) return '40-45';
+  }
+  return nm[Math.min(p1,4)] + '-' + nm[Math.min(p2,4)];
 }
 function isTennisGameOver(p1, p2) {
   if (p1 >= 4 && p1 - p2 >= 2) return true;
