@@ -726,14 +726,13 @@ async function loadQuickScore(el) {
     quickStageInit = true;
     const groupDone = hasGroup && matches.filter(m=>m.stage==='group').every(m=>m.status==='completed');
     quickStage = (hasKO && groupDone) ? 'knockout' : (hasGroup ? 'group' : 'group');
+    // Auto-uncheck if all matches done
+    const sm = matches.filter(m => m.stage === quickStage);
+    if (sm.length > 0 && sm.every(m => m.status === 'completed')) {
+      quickPending = false;
+    }
   }
   const stage = quickStage;
-
-  // Auto-uncheck "pending only" if all matches done
-  const stageMatches = matches.filter(m => m.stage === stage);
-  if (stageMatches.length > 0 && stageMatches.every(m => m.status === 'completed')) {
-    quickPending = false;
-  }
 
   if (!stage) {
     el.innerHTML = '<div class="card" style="text-align:center;padding:40px;color:#999">暂无比赛数据</div>';
