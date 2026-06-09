@@ -790,12 +790,14 @@ let quickFilter = 'all';
 let quickPending = true;
 
 function filterQuickMatches(matches, stage) {
-  let filtered = matches.filter(m => m.stage === stage);
-  if (quickFilter !== 'all') {
-    if (stage === 'group') {
+  let filtered;
+  if (stage === 'knockout') {
+    filtered = matches.filter(m => m.stage !== 'group');
+  } else {
+    filtered = matches.filter(m => m.stage === stage);
+    if (quickFilter !== 'all') {
       filtered = filtered.filter(m => m.group_name === quickFilter);
     }
-    // knockout doesn't filter by group_name
   }
   if (quickPending) {
     filtered = filtered.filter(m => m.status !== 'completed');
