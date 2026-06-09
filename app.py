@@ -430,10 +430,13 @@ def api_update_score(match_id: int, data: ScoreUpdate, request: Request):
     if not match:
         raise HTTPException(404, "比赛不存在")
 
-    if score1 == score2:
-        raise HTTPException(400, "比分不能相等，如2:2抢七决胜局分写3:2，抢七小分填在抢七栏")
+    if score1 == score2 and (data.tb_score1 is None or data.tb_score2 is None):
+        raise HTTPException(400, "比分不能相等，如2:2抢七决胜局分写2:2，抢七小分填在抢七栏")
 
-    winner_id = match["player1_id"] if score1 > score2 else match["player2_id"]
+    if data.tb_score1 is not None and data.tb_score2 is not None:
+        winner_id = match["player1_id"] if data.tb_score1 > data.tb_score2 else match["player2_id"]
+    else:
+        winner_id = match["player1_id"] if score1 > score2 else match["player2_id"]
 
     db.update_match_score(match_id, score1, score2, winner_id, data.tb_score1, data.tb_score2,
                           json.dumps(data.game_details) if data.game_details else None)
