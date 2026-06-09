@@ -812,9 +812,10 @@ function renderGameRow(mid, gameIdx, label, isU8) {
   s += `<span class="gscore-display" style="min-width:60px;text-align:center;font-weight:600;font-family:monospace">${display}</span>`;
   if (over) {
     s += `<span style="color:#27ae60;font-weight:600;font-size:0.75rem">✓Game</span>`;
+    if (g.length > 0) s += `<button class="pt-btn pt-undo" data-mid="${mid}" data-game="${gameIdx}">↩</button>`;
   } else {
-    s += `<button class="pt-btn pt-plus" data-mid="${mid}" data-game="${gameIdx}" data-player="p1" ${over?'disabled':''}>+A</button>`;
-    s += `<button class="pt-btn pt-plus" data-mid="${mid}" data-game="${gameIdx}" data-player="p2" ${over?'disabled':''}>+B</button>`;
+    s += `<button class="pt-btn pt-plus" data-mid="${mid}" data-game="${gameIdx}" data-player="p1">+A</button>`;
+    s += `<button class="pt-btn pt-plus" data-mid="${mid}" data-game="${gameIdx}" data-player="p2">+B</button>`;
     if (g.length > 0) s += `<button class="pt-btn pt-undo" data-mid="${mid}" data-game="${gameIdx}">↩</button>`;
   }
   s += '</div>';
