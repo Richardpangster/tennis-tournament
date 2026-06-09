@@ -345,7 +345,14 @@ async def api_import_file(request: Request, file: UploadFile = File(...), catego
         finally:
             wb.close()
     elif filename.endswith(".csv"):
-        text = content.decode("utf-8-sig")
+        # Try UTF-8-BOM first, then GBK (common for Chinese Excel exports)
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            try:
+                text = content.decode("gbk")
+            except UnicodeDecodeError as e:
+                raise HTTPException(400, f"无法识别CSV文件编码，请保存为 UTF-8 格式: {e}")
         reader = csv.DictReader(io.StringIO(text))
         if not reader.fieldnames:
             raise HTTPException(400, "无法解析CSV，请确认格式正确")
