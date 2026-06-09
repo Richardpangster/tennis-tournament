@@ -491,7 +491,15 @@ function bindPtButtons() {
       const player = b.dataset.player;
       initScoreState(mid);
       if (cat !== 'U8') ensureU10State(mid);
-      if (gameIdx === 'tb') {
+      if (!player) {
+        // Undo: remove last point
+        if (gameIdx === 'tb') {
+          scoreState[mid].tiebreak.pop();
+        } else {
+          const gi = parseInt(gameIdx);
+          if (scoreState[mid].games[gi]) scoreState[mid].games[gi].pop();
+        }
+      } else if (gameIdx === 'tb') {
         scoreState[mid].tiebreak.push(player);
       } else {
         const gi = parseInt(gameIdx);
@@ -560,7 +568,8 @@ function renderMatchRow(m) {
         s += `<span style="font-family:monospace;margin:0 2px">${tennisDisplay(p1c, p2c)}</span>`;
       }
       s += '</span>';
-      // Show buttons for the active game
+      // Show buttons for the active game, or tiebreak if 2-2
+      let hasActive = false;
       for (let i = 0; i < 4; i++) {
         const g = scoreState[m.id].games[i] || [];
         const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
@@ -568,7 +577,20 @@ function renderMatchRow(m) {
           s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="${i}" data-player="p1" style="font-size:0.7rem;padding:1px 4px">+A</button>`;
           s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="${i}" data-player="p2" style="font-size:0.7rem;padding:1px 4px">+B</button>`;
           if (g.length > 0) s += `<button class="pt-btn pt-undo match-pt-btn" data-mid="${m.id}" data-game="${i}" style="font-size:0.7rem;padding:1px 2px">↩</button>`;
-          break; // Only show buttons for first incomplete game
+          hasActive = true;
+          break;
+        }
+      }
+      // All 4 games done & 2-2: show tiebreak controls
+      if (!hasActive && isTiebreakNeeded(m.id)) {
+        const tb = scoreState[m.id].tiebreak || [];
+        const tp1 = countPoints(tb, 'p1'), tp2 = countPoints(tb, 'p2');
+        s += `<span style="margin:0 4px;font-family:monospace;font-weight:600;font-size:0.8rem">抢七 ${tp1}-${tp2}</span>`;
+        if (!isTiebreakOver(tp1, tp2)) {
+          s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="tb" data-player="p1" style="font-size:0.7rem;padding:1px 4px">+A</button>`;
+          s += `<button class="pt-btn pt-plus match-pt-btn" data-mid="${m.id}" data-game="tb" data-player="p2" style="font-size:0.7rem;padding:1px 4px">+B</button>`;
+          if (tb.length > 0) s += `<button class="pt-btn pt-undo match-pt-btn" data-mid="${m.id}" data-game="tb" style="font-size:0.7rem;padding:1px 2px">↩</button>`;
+          hasActive = true;
         }
       }
     }
