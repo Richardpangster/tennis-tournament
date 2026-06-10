@@ -18,6 +18,7 @@
 
 <script>
 const CAT = '{{ category }}';
+	const GROUP_NAMES = {{ group_names | tojson }};
 let countdown = 30;
 const isU8 = CAT === 'U8';
 
@@ -77,7 +78,7 @@ function render(standings, matches) {
   if (hasGroup) {
     html += '<div class="section-title">小组赛积分榜</div>';
     html += '<div class="grid-2">';
-    for (const g of ['A','B','C','D']) {
+    for (const g of GROUP_NAMES) {
       const gs = standings[g] || [];
       const gm = groupMatches.filter(m => m.group_name === g);
       const done = gm.filter(m => m.status === 'completed').length;
@@ -139,32 +140,45 @@ function renderBracket(matches) {
 
   let h = '<div class="card" style="overflow-x:auto"><table style="min-width:600px">';
 
-  h += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">8强</td>';
-  h += '<td colspan="2" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
-  h += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
+  if (GROUP_NAMES.length === 4) {
+    h += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">8强</td>';
+    h += '<td colspan="2" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
+    h += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
 
-  const qfs = (byStage['quarterfinal']||[]).sort((a,b)=>a.match_order-b.match_order);
-  const QF_LABELS = {1:'A1 vs C2', 2:'B1 vs D2', 3:'C1 vs A2', 4:'D1 vs B2'};
-  for (let i = 0; i < 4; i++) {
-    h += '<tr>';
-    const label = QF_LABELS[qfs[i].match_order] || '';
-    h += `<td colspan="4" style="border-right:2px solid #ddd">${renderPublicKO(qfs[i], label)}</td>`;
-    // 上半区 SF1 (rows 0,1)
-    if (i < 2) {
-      const sf = (byStage['semifinal']||[]).find(m=>m.match_order===5);
-      if (i === 0) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf, '上半区'):'—'}</td>`;
+    const qfs = (byStage['quarterfinal']||[]).sort((a,b)=>a.match_order-b.match_order);
+    const QF_LABELS = {1:'A1 vs C2', 2:'B1 vs D2', 3:'C1 vs A2', 4:'D1 vs B2'};
+    for (let i = 0; i < 4; i++) {
+      h += '<tr>';
+      const label = QF_LABELS[qfs[i].match_order] || '';
+      h += `<td colspan="4" style="border-right:2px solid #ddd">${renderPublicKO(qfs[i], label)}</td>`;
+      if (i < 2) {
+        const sf = (byStage['semifinal']||[]).find(m=>m.match_order===5);
+        if (i === 0) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf, '上半区'):'—'}</td>`;
+      }
+      if (i >= 2) {
+        const sf = (byStage['semifinal']||[]).find(m=>m.match_order===6);
+        if (i === 2) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf, '下半区'):'—'}</td>`;
+      }
+      if (i < 1) {
+        const fin = (byStage['final']||[])[0];
+        h += `<td rowspan="4" style="vertical-align:middle">${fin?renderPublicKO(fin):'—'}</td>`;
+      }
+      h += '</tr>';
     }
-    // 下半区 SF2 (rows 2,3)
-    if (i >= 2) {
-      const sf = (byStage['semifinal']||[]).find(m=>m.match_order===6);
-      if (i === 2) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf, '下半区'):'—'}</td>`;
+  } else {
+    h += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
+    h += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
+    const sfs = (byStage['semifinal']||[]).sort((a,b)=>a.match_order-b.match_order);
+    const SF_LABELS = {1:'A1 vs B2', 2:'B1 vs A2'};
+    for (let i = 0; i < 2; i++) {
+      h += '<tr>';
+      h += `<td colspan="4" style="border-right:2px solid #ddd">${renderPublicKO(sfs[i], SF_LABELS[sfs[i].match_order]||'')}</td>`;
+      if (i < 1) {
+        const fin = (byStage['final']||[])[0];
+        h += `<td rowspan="2" style="vertical-align:middle">${fin?renderPublicKO(fin):'—'}</td>`;
+      }
+      h += '</tr>';
     }
-    // 决赛 (spans all 4 rows)
-    if (i < 1) {
-      const fin = (byStage['final']||[])[0];
-      h += `<td rowspan="4" style="vertical-align:middle">${fin?renderPublicKO(fin):'—'}</td>`;
-    }
-    h += '</tr>';
   }
   h += '</table></div>';
   return h;

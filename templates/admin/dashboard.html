@@ -45,6 +45,12 @@
 <script>
 // ═══════════ State ═══════════
 const CATS = ['U8','U10','U12','U14'];
+const CAT_CONFIG = {
+  U8:  {max: 16, groups: ['A','B','C','D']},
+  U10: {max: 16, groups: ['A','B','C','D']},
+  U12: {max: 16, groups: ['A','B','C','D']},
+  U14: {max: 8,  groups: ['A','B']},
+};
 let cat = 'U8';
 let func = '{{ "quick" if role == "referee" else "players" }}';
 const ROLE = '{{ role }}';
@@ -214,8 +220,8 @@ async function loadPlayers(el) {
   // Counts bar
   html += '<div class="card" style="display:flex;gap:16px;font-size:0.9rem">';
   for (const c of CATS) {
-    const full = counts[c] >= 16;
-    html += `<span>${c}: <strong>${counts[c]}/16</strong> <span class="badge ${full?'badge-full':'badge-open'}">${full?'已满':'报名中'}</span></span>`;
+    const full = counts[c] >= CAT_CONFIG[c].max;
+    html += `<span>${c}: <strong>${counts[c]}/${CAT_CONFIG[c].max}</strong> <span class="badge ${full?'badge-full':'badge-open'}">${full?'已满':'报名中'}</span></span>`;
   }
   html += '</div>';
 
@@ -226,7 +232,7 @@ async function loadPlayers(el) {
       <input id="pname" placeholder="学员姓名" required>
       <input id="pphone" placeholder="手机号" required>
       <input id="pbirth" placeholder="出生日期 (选填)" type="date">
-      <button class="btn btn-primary" id="btn-add" ${myCount>=16?'disabled':''}>添加</button>
+      <button class="btn btn-primary" id="btn-add" ${myCount>=CAT_CONFIG[cat].max?'disabled':''}>添加</button>
     </div>
   </div>`;
 
@@ -238,14 +244,14 @@ async function loadPlayers(el) {
     <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <button class="btn btn-primary" id="btn-import-auto">自动识别组别导入</button>
       <span style="font-size:0.75rem;color:#888">或指定组别:</span>
-      ${CATS.map(c => `<button class="btn btn-sm btn-outline import-cat-btn" data-cat="${c}" ${(counts[c]||0)>=16?'disabled':''}>仅导入${c}</button>`).join('')}
+      ${CATS.map(c => `<button class="btn btn-sm btn-outline import-cat-btn" data-cat="${c}" ${(counts[c]||0)>=CAT_CONFIG[c].max?'disabled':''}>仅导入${c}</button>`).join('')}
       <span style="font-size:0.75rem;color:#888">CSV需含「参赛组别」列（值为U8/U10/U12/U14）</span>
     </div>
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed #ddd;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <span style="font-size:0.85rem;font-weight:500">📁 上传文件：</span>
       <input type="file" id="import-file" accept=".csv,.xlsx" style="font-size:0.85rem" />
       <button class="btn btn-primary btn-sm" id="btn-import-file-auto">自动识别组别</button>
-      ${CATS.map(c => `<button class="btn btn-sm btn-outline import-file-cat-btn" data-cat="${c}" ${(counts[c]||0)>=16?'disabled':''}>仅导入${c}</button>`).join('')}
+      ${CATS.map(c => `<button class="btn btn-sm btn-outline import-file-cat-btn" data-cat="${c}" ${(counts[c]||0)>=CAT_CONFIG[c].max?'disabled':''}>仅导入${c}</button>`).join('')}
     </div>
     <div id="import-result" style="margin-top:8px;font-size:0.85rem"></div>
   </div>`;
@@ -253,7 +259,7 @@ async function loadPlayers(el) {
   // Actions bar
   html += '<div class="card" style="display:flex;gap:8px;align-items:center">';
   html += `<span>共 <strong>${myCount}</strong> 人</span>`;
-  if (!hasGroup && myCount === 16) {
+  if (!hasGroup && myCount === CAT_CONFIG[cat].max) {
     html += '<button class="btn btn-primary" id="btn-draw">🎲 一键分组抽签</button>';
   }
   if (hasGroup) {
@@ -351,7 +357,7 @@ async function doDraw() {
   if (!confirm(`确定对 ${cat} 组进行随机分组抽签？`)) return;
   try {
     const r = await api('/api/draw-groups/'+cat, {method:'POST'});
-    toast('分组完成！4个小组已生成');
+    toast(`分组完成！${CAT_CONFIG[cat].groups.length}个小组已生成`);
     // Switch to group tab
     func = 'group';
     document.querySelectorAll('#func-tabs .tab').forEach(t => t.classList.remove('active'));
@@ -533,7 +539,7 @@ async function loadGroupStage(el) {
   if (!hasGroup) {
     el.innerHTML = `<div class="card" style="text-align:center;padding:40px;color:#999">
       <p style="font-size:3rem">📋</p>
-      <p>尚未分组抽签，请先在「球员管理」中添加 16 名球员并点击「一键分组抽签」</p>
+      <p>尚未分组抽签，请先在「球员管理」中添加 ${CAT_CONFIG[cat].max} 名球员并点击「一键分组抽签」</p>
     </div>`;
     return;
   }
@@ -557,15 +563,15 @@ async function loadGroupStage(el) {
   const doneCount = matches.filter(m => m.status === 'completed').length;
   html += `<span>小组赛进度: <strong>${doneCount}/${matches.length}</strong></span>`;
   if (allDone && !hasKO) {
-    html += '<button class="btn btn-primary" id="btn-top8">🏆 生成 8 强淘汰赛</button>';
+    html += '<button class="btn btn-primary" id="btn-top8">🏆 生成淘汰赛</button>';
   }
   if (hasKO) {
-    html += '<span class="badge badge-open">✓ 8强已生成</span>';
+    html += '<span class="badge badge-open">✓ 淘汰赛已生成</span>';
   }
   html += '</div>';
 
   // Group matches
-  ['A','B','C','D'].forEach(g => {
+  CAT_CONFIG[cat].groups.forEach(g => {
     const groupMatches = matches.filter(m => m.group_name === g);
     html += `<div class="card"><h3>${g} 组</h3>`;
 
@@ -679,10 +685,11 @@ async function checkKnockout() {
 
 async function loadKnockout(el) {
   const hasKO = await checkKnockout();
+  const cfg = CAT_CONFIG[cat];
   if (!hasKO) {
     el.innerHTML = `<div class="card" style="text-align:center;padding:40px;color:#999">
       <p style="font-size:3rem">🏆</p>
-      <p>尚未生成淘汰赛，请先完成小组赛并在「小组赛」中点击「生成8强淘汰赛」</p>
+      <p>尚未生成淘汰赛，请先完成小组赛并在「小组赛」中点击「生成淘汰赛」</p>
     </div>`;
     return;
   }
@@ -695,35 +702,47 @@ async function loadKnockout(el) {
   html += '<div style="overflow-x:auto">';
   html += '<table style="min-width:600px">';
 
-  // QF
-  const qfs = (byStage['quarterfinal']||[]).sort((a,b)=>a.match_order-b.match_order);
-  html += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">8强</td>';
-  html += '<td colspan="2" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
-  html += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
-
-  const QF_LABELS = {1:'A1 vs C2', 2:'B1 vs D2', 3:'C1 vs A2', 4:'D1 vs B2'};
-
-  for (let i = 0; i < 4; i++) {
-    html += '<tr>';
-    const qf = qfs[i];
-    const label = QF_LABELS[qf.match_order] || '';
-    html += `<td colspan="4" style="border-right:2px solid #ddd">${renderKOMatch(qf, label)}</td>`;
-    // 上半区 SF1 (rows 0,1)
-    if (i < 2) {
-      const sf = (byStage['semifinal']||[]).find(m=>m.match_order===5);
-      if (i === 0) html += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderKOMatch(sf, '上半区'):'—'}</td>`;
+  if (cfg.groups.length === 4) {
+    // ── 4-group bracket: 4 QF → 2 SF → Final ──
+    const qfs = (byStage['quarterfinal']||[]).sort((a,b)=>a.match_order-b.match_order);
+    html += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">8强</td>';
+    html += '<td colspan="2" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
+    html += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
+    const QF_LABELS = {1:'A1 vs C2', 2:'B1 vs D2', 3:'C1 vs A2', 4:'D1 vs B2'};
+    for (let i = 0; i < 4; i++) {
+      html += '<tr>';
+      const qf = qfs[i];
+      html += `<td colspan="4" style="border-right:2px solid #ddd">${renderKOMatch(qf, QF_LABELS[qf.match_order]||'')}</td>`;
+      if (i < 2) {
+        const sf = (byStage['semifinal']||[]).find(m=>m.match_order===5);
+        if (i === 0) html += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderKOMatch(sf,'上半区'):'—'}</td>`;
+      }
+      if (i >= 2) {
+        const sf = (byStage['semifinal']||[]).find(m=>m.match_order===6);
+        if (i === 2) html += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderKOMatch(sf,'下半区'):'—'}</td>`;
+      }
+      if (i < 1) {
+        const fin = (byStage['final']||[])[0];
+        html += `<td rowspan="4" style="vertical-align:middle">${fin?renderKOMatch(fin):'—'}</td>`;
+      }
+      html += '</tr>';
     }
-    // 下半区 SF2 (rows 2,3)
-    if (i >= 2) {
-      const sf = (byStage['semifinal']||[]).find(m=>m.match_order===6);
-      if (i === 2) html += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderKOMatch(sf, '下半区'):'—'}</td>`;
+  } else {
+    // ── 2-group bracket: 2 SF → Final ──
+    const sfs = (byStage['semifinal']||[]).sort((a,b)=>a.match_order-b.match_order);
+    html += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
+    html += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
+    const SF_LABELS = {1:'A1 vs B2', 2:'B1 vs A2'};
+    for (let i = 0; i < 2; i++) {
+      html += '<tr>';
+      const sf = sfs[i];
+      html += `<td colspan="4" style="border-right:2px solid #ddd">${renderKOMatch(sf, SF_LABELS[sf.match_order]||'')}</td>`;
+      if (i < 1) {
+        const fin = (byStage['final']||[])[0];
+        html += `<td rowspan="2" style="vertical-align:middle">${fin?renderKOMatch(fin):'—'}</td>`;
+      }
+      html += '</tr>';
     }
-    // 决赛 (spans all 4 rows)
-    if (i < 1) {
-      const fin = (byStage['final']||[])[0];
-      html += `<td rowspan="4" style="vertical-align:middle">${fin?renderKOMatch(fin):'—'}</td>`;
-    }
-    html += '</tr>';
   }
   html += '</table></div>';
   html += '</div>';
@@ -754,10 +773,13 @@ function stageLabel(s) {
 }
 
 async function doTop8Draw() {
-  if (!confirm('确定生成8强对阵？对阵为 A1vsC2, B1vsD2, C1vsA2, D1vsB2')) return;
+  const cfg2 = CAT_CONFIG[cat];
+if (!confirm(cfg2.groups.length===4
+  ? '确定生成8强对阵？对阵为 A1vsC2, B1vsD2, C1vsA2, D1vsB2'
+  : '确定生成淘汰赛对阵？对阵为 A1vsB2, B1vsA2')) return;
   try {
     await api('/api/draw-top8/'+cat, {method:'POST'});
-    toast('8强抽签完成！');
+    toast('淘汰赛抽签完成！');
     func = 'knockout';
     document.querySelectorAll('#func-tabs .tab').forEach(t => t.classList.remove('active'));
     document.querySelector('#func-tabs [data-func="knockout"]').classList.add('active');
@@ -797,7 +819,7 @@ async function loadQuickScore(el) {
   html += `<button class="btn btn-sm ${stage==='group'?'btn-primary':'btn-outline'}" id="qstage-group">小组赛</button>`;
   html += `<button class="btn btn-sm ${stage==='knockout'?'btn-primary':'btn-outline'}" id="qstage-ko">淘汰赛</button>`;
   html += '<span style="margin-left:16px;font-size:0.9rem;color:#888">组别:</span>';
-  for (const g of ['all','A','B','C','D']) {
+  for (const g of ['all', ...CAT_CONFIG[cat].groups]) {
     html += `<button class="btn btn-sm ${quickFilter===g?'btn-primary':'btn-outline'} qfilter-btn" data-g="${g}">${g==='all'?'全部':g+'组'}</button>`;
   }
   html += '<label style="margin-left:auto;font-size:0.85rem;cursor:pointer">';
@@ -894,6 +916,9 @@ function canScoreKnockout(m, allMatches) {
   if (m.stage === 'quarterfinal') return true;
   const koMatches = allMatches.filter(x => x.stage !== 'group');
   if (m.stage === 'semifinal') {
+    // If no QF matches exist (2-group bracket), SF is the first round — no prerequisites
+    const hasQF = koMatches.some(x => x.stage === 'quarterfinal');
+    if (!hasQF) return true;
     const qfOrders = m.match_order === 5 ? [1, 2] : [3, 4];
     return qfOrders.every(qo => {
       const qf = koMatches.find(x => x.stage === 'quarterfinal' && x.match_order === qo);

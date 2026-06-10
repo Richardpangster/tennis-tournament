@@ -18,8 +18,8 @@
   {% for c in categories %}
   <a href="/public/{{ c }}" class="category-card">
     <h2>{{ c }}</h2>
-    <div class="meta">{{ counts[c] }} 人报名</div>
-    {% if counts[c] >= 16 %}<span class="badge badge-full">已满</span>{% endif %}
+    <div class="meta">{{ counts[c] }} / {{ max_players[c] }} 人</div>
+    {% if counts[c] >= max_players[c] %}<span class="badge badge-full">已满</span>{% endif %}
   </a>
   {% endfor %}
 </div>
