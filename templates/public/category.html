@@ -102,7 +102,7 @@ function render(standings, matches) {
 
     // Group match results
     html += '<div class="section-title">小组赛比分</div>';
-    ['A','B','C','D'].forEach(g => {
+    GROUP_NAMES.forEach(g => {
       const gm = groupMatches.filter(m => m.group_name === g);
       html += `<div class="card"><h4>${g} 组</h4>`;
       for (let r=1; r<=3; r++) {
