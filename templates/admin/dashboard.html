@@ -20,7 +20,7 @@
       </div>
     </div>
     <div style="text-align:right;font-size:0.8rem">
-      <span class="badge" style="background:{{ 'rgba(255,255,255,0.2)' if role=='admin' else 'rgba(255,193,7,0.8)' }};color:#fff;margin-bottom:4px;display:inline-block">{{ '管理员' if role=='admin' else '裁判员' }}</span>
+      <span class="badge" style="background:{{ 'rgba(255,255,255,0.2)' if role=='admin' else 'rgba(255,193,7,0.8)' }};color:#fff;margin-bottom:4px;display:inline-block">{{ '管理员' if role=='admin' else '裁判员：' + referee_name }}</span>
       <br><a href="/admin/logout" style="color:#fff;opacity:0.7;font-size:0.75rem">退出</a>
     </div>
   </div>
@@ -35,6 +35,7 @@
   <button class="tab active" data-func="players">球员管理</button>
   <button class="tab" data-func="group">小组赛</button>
   <button class="tab" data-func="knockout">淘汰赛</button>
+  <button class="tab" data-func="referees">裁判员</button>
   {% endif %}
   <button class="tab {{ 'active' if role=='referee' else '' }}" data-func="quick">快速记分</button>
 </div>
@@ -47,6 +48,7 @@ const CATS = ['U8','U10','U12','U14'];
 let cat = 'U8';
 let func = '{{ "quick" if role == "referee" else "players" }}';
 const ROLE = '{{ role }}';
+const REF_NAME = '{{ referee_name }}';
 
 function scoreUnit(c) { return c === 'U8' ? '分' : '局'; }
 function scoreRule(c) { return c === 'U8' ? '一局11分定胜负' : '4局无占先，2:2抢7决胜（如2:2抢7胜，直接输抢七比分如7-5）'; }
@@ -178,6 +180,7 @@ async function loadContent() {
     if (func === 'players') await loadPlayers(el);
     else if (func === 'group') await loadGroupStage(el);
     else if (func === 'knockout') await loadKnockout(el);
+    else if (func === 'referees') await loadReferees(el);
     else if (func === 'quick') await loadQuickScore(el);
   } catch(e) {
     el.innerHTML = `<div class="card" style="color:#e74c3c">⚠ ${e.message}</div>`;
@@ -357,6 +360,102 @@ async function doClearGroups() {
   await api('/api/clear/'+cat, {method:'POST'});
   toast('已清除');
   loadContent();
+}
+
+// ═══════════ Referee Management ═══════════
+async function loadReferees(el) {
+  const referees = await api('/api/referees');
+  let html = '<div class="card"><h3>裁判员名单管理</h3>';
+  html += '<p style="font-size:0.85rem;color:#888;margin-bottom:12px">裁判员登录时从名单中选择姓名，记分后追溯是谁录入的。</p>';
+
+  // Add form
+  html += '<div class="form-row" style="margin-bottom:16px">';
+  html += '<input id="ref-name" placeholder="裁判员姓名" required>';
+  html += '<button class="btn btn-primary" id="btn-add-ref">添加</button>';
+  html += '</div>';
+
+  // List
+  if (referees.length > 0) {
+    html += '<table><thead><tr><th>姓名</th><th>状态</th><th>记分次数</th><th>创建时间</th><th></th></tr></thead><tbody>';
+    referees.forEach(r => {
+      const scored = (r.scored_count || 0);
+      html += `<tr id="ref-row-${r.id}">
+        <td class="cell-name">${r.name}</td>
+        <td><span class="badge ${r.active?'badge-open':'badge-full'}">${r.active?'启用':'停用'}</span></td>
+        <td>${scored} 场</td>
+        <td>${r.created_at||'-'}</td>
+        <td>
+          <button class="btn btn-sm btn-outline ref-edit-btn" data-id="${r.id}" data-name="${r.name.replace(/"/g,'&quot;')}">编辑</button>
+          <button class="btn btn-sm btn-outline ref-toggle-btn" data-id="${r.id}" data-active="${r.active}">${r.active?'停用':'启用'}</button>
+          <button class="btn btn-danger btn-sm ref-del-btn" data-id="${r.id}" data-name="${r.name.replace(/"/g,'&quot;')}">删除</button>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:#999;text-align:center;padding:20px">暂未添加裁判员</p>';
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+
+  // Bind events
+  document.getElementById('btn-add-ref')?.addEventListener('click', addReferee);
+  document.querySelectorAll('.ref-edit-btn').forEach(b => b.onclick = function() { startEditRef(this); });
+  document.querySelectorAll('.ref-toggle-btn').forEach(b => b.onclick = () => toggleReferee(b.dataset.id, b.dataset.active === '1'));
+  document.querySelectorAll('.ref-del-btn').forEach(b => b.onclick = () => deleteReferee(b.dataset.id, b.dataset.name));
+}
+
+async function addReferee() {
+  const name = document.getElementById('ref-name').value.trim();
+  if (!name) return toast('请输入姓名', 'error');
+  try {
+    await api('/api/referees', {method:'POST', body:JSON.stringify({name})});
+    toast('已添加');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function startEditRef(btn) {
+  const id = btn.dataset.id;
+  const row = document.getElementById('ref-row-'+id);
+  const name = btn.dataset.name.replace(/&quot;/g, '"');
+  row.innerHTML = `
+    <td colspan="2"><input id="eref-name-${id}" value="${name.replace(/"/g,'&quot;')}" style="width:100%;padding:4px;border:1px solid #2e86c1;border-radius:4px"></td>
+    <td colspan="2"></td>
+    <td>
+      <button class="btn btn-primary btn-sm save-ref-btn" data-id="${id}">保存</button>
+      <button class="btn btn-sm btn-outline cancel-ref-btn">取消</button>
+    </td>`;
+  row.querySelector('.save-ref-btn').onclick = () => saveEditRef(id);
+  row.querySelector('.cancel-ref-btn').onclick = () => loadContent();
+}
+
+async function saveEditRef(id) {
+  const name = document.getElementById('eref-name-'+id).value.trim();
+  if (!name) return toast('姓名不能为空', 'error');
+  try {
+    await api('/api/referees/'+id, {method:'PUT', body:JSON.stringify({name})});
+    toast('已保存');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function toggleReferee(id, currentlyActive) {
+  try {
+    await api('/api/referees/'+id, {method:'PUT', body:JSON.stringify({active: currentlyActive ? 0 : 1})});
+    toast(currentlyActive ? '已停用' : '已启用');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function deleteReferee(id, name) {
+  if (!confirm(`确定删除裁判员「${name}」？`)) return;
+  try {
+    await api('/api/referees/'+id, {method:'DELETE'});
+    toast('已删除');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function doImport(targetCat) {
@@ -557,7 +656,9 @@ function renderMatchRow(m) {
   let s = `<div class="match-item">`;
   s += `<span style="flex:1;text-align:right">${p1}</span>`;
   if (done) {
-    s += `<span class="match-done" style="margin:0 8px">${formatScoreDisplay(m)}</span>`;
+    s += `<span class="match-done" style="margin:0 8px">${formatScoreDisplay(m)}`;
+    if (m.scored_by) s += `<span style="font-size:0.7rem;color:#888;margin-left:4px">(${m.scored_by})</span>`;
+    s += `</span>`;
   } else {
     s += `<span style="margin:0 8px;color:#999">vs</span>`;
   }
@@ -635,7 +736,9 @@ function renderKOMatch(m, label) {
   s += `<div class="player${done && m.winner_id===m.player1_id?' winner':''}">${p1}</div>`;
   s += `<div class="player${done && m.winner_id===m.player2_id?' winner':''}">${p2}</div>`;
   if (done) {
-    s += `<div style="color:#27ae60;font-weight:600;font-size:0.8rem">${formatScoreDisplay(m)}</div>`;
+    s += `<div style="color:#27ae60;font-weight:600;font-size:0.8rem">${formatScoreDisplay(m)}`;
+    if (m.scored_by) s += `<span style="font-size:0.65rem;color:#888"> (${m.scored_by})</span>`;
+    s += `</div>`;
   }
   s += '</div>';
   return s;
@@ -816,7 +919,8 @@ function renderQuickCard(m, stage, allMatches) {
     // Show completed result with edit button
     let scoreText = formatScoreDisplay(m);
     const wn = m.winner_name || '?';
-    s += `<div style="text-align:center;color:#27ae60;font-weight:600">✓ ${scoreText} → ${wn} 胜</div>`;
+    let by = m.scored_by ? ` <span style="font-size:0.75rem;color:#888">— 记分：${m.scored_by}</span>` : '';
+    s += `<div style="text-align:center;color:#27ae60;font-weight:600">✓ ${scoreText} → ${wn} 胜${by}</div>`;
     if (ROLE === 'admin') {
       s += `<div style="text-align:center;margin-top:4px"><button class="btn btn-sm btn-outline qedit-btn" data-id="${m.id}">重新记分</button></div>`;
     }
@@ -917,7 +1021,7 @@ async function quickSave(mid) {
     }
   }
 
-  const body = { score1: s1, score2: s2, game_details: gameDetails };
+  const body = { score1: s1, score2: s2, game_details: gameDetails, referee_name: REF_NAME };
   if (tb1 != null) { body.tb_score1 = tb1; body.tb_score2 = tb2; }
 
   try {

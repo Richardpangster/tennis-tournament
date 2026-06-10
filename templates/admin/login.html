@@ -52,8 +52,14 @@
   <div class="error">{{ error }}</div>
   {% endif %}
 
-  <form method="post" action="/admin/login">
-    <input type="password" name="password" placeholder="输入密码" autofocus>
+  <form method="post" action="/admin/login" id="login-form">
+    <input type="password" name="password" id="password" placeholder="输入密码" autofocus>
+    <div id="referee-row" style="display:none">
+      <select id="referee-select" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:1rem;margin-bottom:8px;text-align:center">
+        <option value="">— 选择你的姓名 —</option>
+      </select>
+      <input type="text" name="referee_name" id="referee-name" placeholder="或手动输入姓名" style="display:none">
+    </div>
     <button type="submit">登录</button>
   </form>
 
@@ -61,6 +67,50 @@
     管理员密码：全功能 · 裁判员密码：仅记分
   </p>
 </div>
+
+<script>
+// Load referee list on page load
+fetch('/api/referees?active_only=true')
+  .then(r => r.json())
+  .then(referees => {
+    if (!referees.length) return;
+    const sel = document.getElementById('referee-select');
+    referees.forEach(r => {
+      const opt = document.createElement('option');
+      opt.value = r.name;
+      opt.textContent = r.name;
+      sel.appendChild(opt);
+    });
+    const others = document.createElement('option');
+    others.value = '__other__';
+    others.textContent = '其他（手动输入）…';
+    sel.appendChild(others);
+  })
+  .catch(() => {});
+
+// Show referee name row when password loses focus (not admin)
+document.getElementById('password').addEventListener('blur', function() {
+  // Show selector for any non-empty password — will show error if referee doesn't pick name
+  if (this.value) {
+    document.getElementById('referee-row').style.display = 'block';
+  }
+});
+
+// Toggle manual input when "其他" selected
+document.getElementById('referee-select').addEventListener('change', function() {
+  const manual = document.getElementById('referee-name');
+  if (this.value === '__other__') {
+    manual.style.display = 'block';
+    manual.focus();
+    manual.name = 'referee_name';
+    this.name = '';
+  } else {
+    manual.style.display = 'none';
+    manual.name = '';
+    this.name = 'referee_name';
+  }
+});
+</script>
 
 </body>
 </html>

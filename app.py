@@ -47,11 +47,21 @@ class ScoreUpdate(BaseModel):
     tb_score1: int | None = None
     tb_score2: int | None = None
     game_details: dict | None = None
+    referee_name: str | None = None
 
 
 class ImportCSV(BaseModel):
     csv_text: str
     category: str
+
+
+class RefereeCreate(BaseModel):
+    name: str
+
+
+class RefereeUpdate(BaseModel):
+    name: str | None = None
+    active: int | None = None
 
 
 @asynccontextmanager
@@ -112,17 +122,23 @@ def login_page(request: Request, error: str = ""):
 
 
 @app.post("/admin/login")
-def login(request: Request, password: str = Form(...)):
+def login(request: Request, password: str = Form(...), referee_name: str = Form("")):
     if password == ADMIN_PASSWORD:
         role = "admin"
+        ref_name = "管理员"
     elif password == REFEREE_PASSWORD:
         role = "referee"
+        ref_name = referee_name.strip()
+        if not ref_name:
+            return templates.TemplateResponse(request=request, name="admin/login.html", context={
+                "error": "请选择或输入裁判员姓名",
+            }, status_code=401)
     else:
         return templates.TemplateResponse(request=request, name="admin/login.html", context={
             "error": "密码错误",
         }, status_code=401)
 
-    request.session.update({"role": role, "ts": time.time()})
+    request.session.update({"role": role, "ts": time.time(), "referee_name": ref_name})
     return RedirectResponse("/admin", status_code=303)
 
 
@@ -138,8 +154,8 @@ def admin_page(request: Request):
     if not role:
         return RedirectResponse("/admin/login", status_code=303)
     return templates.TemplateResponse(request=request, name="admin/dashboard.html", context={
-
         "role": role,
+        "referee_name": request.session.get("referee_name", ""),
     })
 
 
@@ -438,14 +454,18 @@ def api_update_score(match_id: int, data: ScoreUpdate, request: Request):
     else:
         winner_id = match["player1_id"] if score1 > score2 else match["player2_id"]
 
+    # Resolve scorer identity: use explicit referee_name from body, or session
+    scored_by = data.referee_name or request.session.get("referee_name", "")
+
     db.update_match_score(match_id, score1, score2, winner_id, data.tb_score1, data.tb_score2,
-                          json.dumps(data.game_details) if data.game_details else None)
+                          json.dumps(data.game_details) if data.game_details else None,
+                          scored_by=scored_by)
 
     # Auto-advance knockout winner to next round
     if winner_id and match["stage"] in ("quarterfinal", "semifinal"):
         _advance_winner(match["category"], match["stage"], match["match_order"], winner_id)
 
-    return {"status": "ok", "winner_id": winner_id}
+    return {"status": "ok", "winner_id": winner_id, "scored_by": scored_by}
 
 
 @app.delete("/api/matches/{match_id}/score")
@@ -612,6 +632,47 @@ def api_clear(category: str, request: Request, stage: str = None):
     if category not in CATEGORIES:
         raise HTTPException(400, "无效组别")
     db.clear_matches(category, stage)
+    return {"status": "ok"}
+
+
+# ═══════════════ Referee API ═══════════════
+
+@app.get("/api/referees")
+def api_referees(request: Request, active_only: bool = False):
+    require_auth(request)
+    return db.get_referees(active_only=active_only)
+
+
+@app.post("/api/referees")
+def api_add_referee(data: RefereeCreate, request: Request):
+    require_role(request, ["admin"])
+    name = data.name.strip()
+    if not name:
+        raise HTTPException(400, "姓名不能为空")
+    try:
+        rid = db.add_referee(name)
+        return {"status": "ok", "id": rid}
+    except Exception as e:
+        raise HTTPException(400, f"添加失败：{e}")
+
+
+@app.put("/api/referees/{referee_id}")
+def api_update_referee(referee_id: int, data: RefereeUpdate, request: Request):
+    require_role(request, ["admin"])
+    name = data.name.strip() if data.name else None
+    active = data.active
+    if active is not None and active not in (0, 1):
+        raise HTTPException(400, "active 必须为 0 或 1")
+    if not db.update_referee(referee_id, name=name, active=active):
+        raise HTTPException(404, "裁判员不存在")
+    return {"status": "ok"}
+
+
+@app.delete("/api/referees/{referee_id}")
+def api_delete_referee(referee_id: int, request: Request):
+    require_role(request, ["admin"])
+    if not db.delete_referee(referee_id):
+        raise HTTPException(400, "无法删除：裁判员不存在或已有记分记录")
     return {"status": "ok"}
 
 
