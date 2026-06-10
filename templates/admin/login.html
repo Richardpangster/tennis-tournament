@@ -73,14 +73,15 @@
 fetch('/api/referees?active_only=true')
   .then(r => r.json())
   .then(referees => {
-    if (!referees.length) return;
     const sel = document.getElementById('referee-select');
-    referees.forEach(r => {
-      const opt = document.createElement('option');
-      opt.value = r.name;
-      opt.textContent = r.name;
-      sel.appendChild(opt);
-    });
+    if (referees.length) {
+      referees.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.name;
+        opt.textContent = r.name;
+        sel.appendChild(opt);
+      });
+    }
     const others = document.createElement('option');
     others.value = '__other__';
     others.textContent = '其他（手动输入）…';

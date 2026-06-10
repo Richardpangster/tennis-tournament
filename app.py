@@ -639,8 +639,9 @@ def api_clear(category: str, request: Request, stage: str = None):
 @app.get("/api/referees")
 def api_referees(request: Request, active_only: bool = False):
     # active_only=true is used by the login page dropdown — allow unauthenticated
+    # full list requires admin (contains inactive referees, timestamps, score counts)
     if not active_only:
-        require_auth(request)
+        require_role(request, ["admin"])
     return db.get_referees(active_only=active_only)
 
 
