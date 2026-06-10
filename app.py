@@ -468,6 +468,7 @@ def _clear_downstream(category: str, stage: str, match_order: int):
     matches = db.get_matches(category)
     knockout = [m for m in matches if m["stage"] != "group"]
 
+    # Step 1: Determine immediate downstream target
     if stage == "quarterfinal":
         sf_order = 5 if match_order <= 2 else 6
         slot = "player1_id" if match_order in (1, 3) else "player2_id"
@@ -478,19 +479,31 @@ def _clear_downstream(category: str, stage: str, match_order: int):
         target_stage = "final"
 
     target = next((m for m in knockout if m["stage"] == target_stage and m["match_order"] == sf_order), None)
-    if target:
-        # Reset downstream match if it was completed (stale score)
-        if target["status"] == "completed":
-            db.reset_match_score(target["id"])
-        # Clear the player slot
-        db.update_match_player(target["id"], slot, None)
+    if not target:
+        return
 
-    # Cascade to final: if downstream SF was reset, also check/reset the final
-    if stage == "quarterfinal" and target and target["status"] == "completed":
-        # SF was reset above; if the other SF produced a final, clean it too
+    # Track whether downstream was completed before we reset it
+    was_completed = target["status"] == "completed"
+
+    # Reset downstream match if it was completed (stale score)
+    if was_completed:
+        db.reset_match_score(target["id"])
+    # Clear the player slot
+    db.update_match_player(target["id"], slot, None)
+
+    # Step 2: Cascade to final
+    if stage == "quarterfinal":
+        # The SF was just cleared; if it had previously advanced a winner to
+        # the final, clear that final slot too
+        sf_match = target  # the SF we just cleared
         final = next((m for m in knockout if m["stage"] == "final"), None)
-        if final and final["status"] == "completed":
-            db.reset_match_score(final["id"])
+        if final:
+            # Determine which slot this SF fills in the final
+            final_slot = "player1_id" if sf_match["match_order"] == 5 else "player2_id"
+            if final[final_slot] is not None:
+                db.update_match_player(final["id"], final_slot, None)
+            if final["status"] == "completed":
+                db.reset_match_score(final["id"])
     elif stage == "semifinal":
         final = next((m for m in knockout if m["stage"] == "final"), None)
         if final and final["status"] == "completed":
