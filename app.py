@@ -414,6 +414,10 @@ def api_draw_groups(category: str, request: Request):
         raise HTTPException(400, "已分组，请先清除再重新抽签")
 
     cfg = get_cat_cfg(category)
+    # Guard: detect old-format groups from a previous config
+    orphaned = db.get_group_names_in_data(category, cfg["group_names"])
+    if orphaned:
+        raise HTTPException(400, f"检测到旧赛制数据（{','.join(orphaned)}组），请先「清除分组」后重新抽签")
     players = db.get_players(category)
     if len(players) != cfg["max_players"]:
         raise HTTPException(400, f"需要恰好 {cfg['max_players']} 人，当前 {len(players)} 人")
@@ -610,6 +614,10 @@ def api_draw_top8(category: str, request: Request):
         raise HTTPException(400, "淘汰赛已生成，请先清除")
 
     cfg = get_cat_cfg(category)
+    # Guard: detect old-format groups from a previous config
+    orphaned = db.get_group_names_in_data(category, cfg["group_names"])
+    if orphaned:
+        raise HTTPException(400, f"检测到旧赛制数据（{','.join(orphaned)}组），请先「清除分组」后重新抽签")
     gn = cfg["group_names"]
 
     standings = db.get_group_standings(category)
