@@ -463,7 +463,8 @@ def api_reset_score(match_id: int, request: Request):
 
 def _clear_downstream(category: str, stage: str, match_order: int):
     """When resetting a QF/SF, clear the winner slot in the downstream match
-    and reset any completed downstream match to prevent stale scores."""
+    and reset any completed downstream matches to prevent stale scores.
+    Cascades all the way to the final if needed."""
     matches = db.get_matches(category)
     knockout = [m for m in matches if m["stage"] != "group"]
 
@@ -483,11 +484,17 @@ def _clear_downstream(category: str, stage: str, match_order: int):
             db.reset_match_score(target["id"])
         # Clear the player slot
         db.update_match_player(target["id"], slot, None)
-        # Cascade further: if we reset an SF, also clear the final
-        if stage == "semifinal":
-            final = next((m for m in knockout if m["stage"] == "final"), None)
-            if final and final["status"] == "completed":
-                db.reset_match_score(final["id"])
+
+    # Cascade to final: if downstream SF was reset, also check/reset the final
+    if stage == "quarterfinal" and target and target["status"] == "completed":
+        # SF was reset above; if the other SF produced a final, clean it too
+        final = next((m for m in knockout if m["stage"] == "final"), None)
+        if final and final["status"] == "completed":
+            db.reset_match_score(final["id"])
+    elif stage == "semifinal":
+        final = next((m for m in knockout if m["stage"] == "final"), None)
+        if final and final["status"] == "completed":
+            db.reset_match_score(final["id"])
 
 
 def _advance_winner(category: str, stage: str, match_order: int, winner_id: int):
