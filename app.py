@@ -642,7 +642,11 @@ def api_referees(request: Request, active_only: bool = False):
     # full list requires admin (contains inactive referees, timestamps, score counts)
     if not active_only:
         require_role(request, ["admin"])
-    return db.get_referees(active_only=active_only)
+    refs = db.get_referees(active_only=active_only)
+    # When unauthenticated, only expose names (login page dropdown)
+    if not check_auth(request):
+        refs = [{"name": r["name"]} for r in refs]
+    return refs
 
 
 @app.post("/api/referees")

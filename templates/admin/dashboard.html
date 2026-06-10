@@ -385,14 +385,14 @@ async function loadReferees(el) {
     referees.forEach(r => {
       const scored = (r.scored_count || 0);
       html += `<tr id="ref-row-${r.id}">
-        <td class="cell-name">${r.name}</td>
+        <td class="cell-name">${escapeHtml(r.name)}</td>
         <td><span class="badge ${r.active?'badge-open':'badge-full'}">${r.active?'启用':'停用'}</span></td>
         <td>${scored} 场</td>
         <td>${r.created_at||'-'}</td>
         <td>
-          <button class="btn btn-sm btn-outline ref-edit-btn" data-id="${r.id}" data-name="${r.name.replace(/"/g,'&quot;')}">编辑</button>
+          <button class="btn btn-sm btn-outline ref-edit-btn" data-id="${r.id}" data-name="${escapeHtml(r.name)}">编辑</button>
           <button class="btn btn-sm btn-outline ref-toggle-btn" data-id="${r.id}" data-active="${r.active}">${r.active?'停用':'启用'}</button>
-          <button class="btn btn-danger btn-sm ref-del-btn" data-id="${r.id}" data-name="${r.name.replace(/"/g,'&quot;')}">删除</button>
+          <button class="btn btn-danger btn-sm ref-del-btn" data-id="${r.id}" data-name="${escapeHtml(r.name)}">删除</button>
         </td>
       </tr>`;
     });
@@ -424,9 +424,9 @@ async function addReferee() {
 function startEditRef(btn) {
   const id = btn.dataset.id;
   const row = document.getElementById('ref-row-'+id);
-  const name = btn.dataset.name.replace(/&quot;/g, '"');
+  const name = btn.dataset.name;
   row.innerHTML = `
-    <td colspan="2"><input id="eref-name-${id}" value="${name.replace(/"/g,'&quot;')}" style="width:100%;padding:4px;border:1px solid #2e86c1;border-radius:4px"></td>
+    <td colspan="2"><input id="eref-name-${id}" value="${escapeHtml(name)}" style="width:100%;padding:4px;border:1px solid #2e86c1;border-radius:4px"></td>
     <td colspan="2"></td>
     <td>
       <button class="btn btn-primary btn-sm save-ref-btn" data-id="${id}">保存</button>
