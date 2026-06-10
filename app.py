@@ -47,7 +47,6 @@ class ScoreUpdate(BaseModel):
     tb_score1: int | None = None
     tb_score2: int | None = None
     game_details: dict | None = None
-    referee_name: str | None = None
 
 
 class ImportCSV(BaseModel):
@@ -454,8 +453,8 @@ def api_update_score(match_id: int, data: ScoreUpdate, request: Request):
     else:
         winner_id = match["player1_id"] if score1 > score2 else match["player2_id"]
 
-    # Resolve scorer identity: use explicit referee_name from body, or session
-    scored_by = data.referee_name or request.session.get("referee_name", "")
+    # Scorer identity always comes from the session (set at login)
+    scored_by = request.session.get("referee_name", "")
 
     db.update_match_score(match_id, score1, score2, winner_id, data.tb_score1, data.tb_score2,
                           json.dumps(data.game_details) if data.game_details else None,
@@ -639,7 +638,9 @@ def api_clear(category: str, request: Request, stage: str = None):
 
 @app.get("/api/referees")
 def api_referees(request: Request, active_only: bool = False):
-    require_auth(request)
+    # active_only=true is used by the login page dropdown — allow unauthenticated
+    if not active_only:
+        require_auth(request)
     return db.get_referees(active_only=active_only)
 
 

@@ -1021,7 +1021,7 @@ async function quickSave(mid) {
     }
   }
 
-  const body = { score1: s1, score2: s2, game_details: gameDetails, referee_name: REF_NAME };
+  const body = { score1: s1, score2: s2, game_details: gameDetails };
   if (tb1 != null) { body.tb_score1 = tb1; body.tb_score2 = tb2; }
 
   try {
