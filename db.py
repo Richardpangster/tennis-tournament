@@ -174,7 +174,9 @@ def get_matches(category: str, stage: str = None) -> list[dict]:
         ).fetchall()
     else:
         rows = conn.execute(
-            f"{base} WHERE m.category=? ORDER BY m.stage, m.match_order, m.id",
+            f"{base} WHERE m.category=? ORDER BY CASE m.stage "
+            "WHEN 'group' THEN 1 WHEN 'quarterfinal' THEN 2 "
+            "WHEN 'semifinal' THEN 3 WHEN 'final' THEN 4 END, m.match_order, m.id",
             (category,),
         ).fetchall()
     conn.close()
@@ -213,6 +215,18 @@ def update_match_player(match_id: int, slot: str, player_id: int | None):
     conn.execute(
         f"UPDATE matches SET {slot}=? WHERE id=?",
         (player_id, match_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def reset_match_score(match_id: int):
+    """Reset a match to pending, clearing all score data."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE matches SET score1=NULL, score2=NULL, winner_id=NULL, "
+        "status='pending', tb_score1=NULL, tb_score2=NULL, game_details=NULL WHERE id=?",
+        (match_id,),
     )
     conn.commit()
     conn.close()

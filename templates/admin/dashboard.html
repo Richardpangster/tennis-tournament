@@ -55,9 +55,14 @@ function countPoints(points, player) {
   return points.filter(p => p === player).length;
 }
 
-// U8: 11-point game
+// U8: 11-point game, win by 2, cap at 14 (group stage)
 function isU8GameOver(p1, p2) {
+  if (Math.max(p1, p2) >= 14) return true;
   return (p1 >= 11 || p2 >= 11) && Math.abs(p1 - p2) >= 2;
+}
+// U8 knockout: first to 11, no win-by-2 required
+function isU8KnockoutGameOver(p1, p2) {
+  return p1 >= 11 || p2 >= 11;
 }
 
 // Tennis: 0-15-30-40-45 (no-ad)
@@ -109,6 +114,13 @@ function getGameCounts(mid) {
     if (cat === 'U8') { if (isU8GameOver(p1, p2)) { if (p1 > p2) p1w++; else p2w++; } }
     else { const w = tennisGameWinner(p1, p2); if (w === 'p1') p1w++; else if (w === 'p2') p2w++; }
   }
+  // Count tiebreak winner as an additional game win
+  if (st.tiebreak && st.tiebreak.length > 0) {
+    const tp1 = countPoints(st.tiebreak, 'p1'), tp2 = countPoints(st.tiebreak, 'p2');
+    if (isTiebreakOver(tp1, tp2)) {
+      if (tp1 > tp2) p1w++; else p2w++;
+    }
+  }
   return [p1w, p2w];
 }
 function isTiebreakNeeded(mid) {
@@ -148,6 +160,10 @@ function switchCategory() {
 // ═══════════ API helpers ═══════════
 async function api(url, opts={}) {
   const res = await fetch(url, {headers:{'Content-Type':'application/json'}, ...opts});
+  if (res.status === 401) {
+    window.location.href = '/admin/login';
+    throw new Error('登录已过期，请重新登录');
+  }
   if (!res.ok) {
     const e = await res.json().catch(()=>({detail:res.statusText}));
     throw new Error(e.detail||'请求失败');
@@ -524,7 +540,7 @@ function formatScoreDisplay(m) {
         parts.push(`抢七 ${tp1}-${tp2}`);
         scoreText += ` [${parts.join(', ')}]`;
       } else {
-        scoreText += ` [${parts.join(', ')}]`;
+        if (!isU8) scoreText += ` [${parts.join(', ')}]`;
       }
     } catch(e) {}
   } else if (!isU8 && m.tb_score1 != null && m.tb_score2 != null) {
@@ -686,7 +702,7 @@ async function loadQuickScore(el) {
   } else {
     html += `<div style="font-size:0.85rem;color:#888;padding:8px 0">共 ${shown.length} 场</div>`;
     for (const m of shown) {
-      html += renderQuickCard(m, stage);
+      html += renderQuickCard(m, stage, matches);
     }
   }
 
@@ -706,6 +722,7 @@ async function loadQuickScore(el) {
     quickPending = e.target.checked; loadContent();
   });
   document.querySelectorAll('.qsave-btn').forEach(b => b.onclick = ()=> quickSave(b.dataset.id));
+  document.querySelectorAll('.qedit-btn').forEach(b => b.onclick = ()=> quickEdit(b.dataset.id));
   bindPtButtons();
 }
 
@@ -730,14 +747,20 @@ function filterQuickMatches(matches, stage) {
   return filtered;
 }
 
-function renderGameRow(mid, gameIdx, label, isU8) {
+function renderGameRow(mid, gameIdx, label, isU8, isKnockout) {
   const st = scoreState[mid];
   if (!st) return '';
   const g = st.games[gameIdx] || [];
   const p1 = countPoints(g, 'p1'), p2 = countPoints(g, 'p2');
-  const over = isU8 ? isU8GameOver(p1, p2) : isTennisGameOver(p1, p2);
+  const gameOverFn = isU8 ? (isKnockout ? isU8KnockoutGameOver : isU8GameOver) : isTennisGameOver;
+  const over = gameOverFn(p1, p2);
   const display = isU8 ? `${p1}-${p2}` : tennisDisplay(p1, p2);
-  const prevOver = gameIdx > 0 && st.games[gameIdx-1] && st.games[gameIdx-1].length > 0;
+  // Check if previous game is complete (sequential enforcement)
+  const prevDone = gameIdx === 0 || (() => {
+    if (!st.games[gameIdx-1]) return false;
+    const pp1 = countPoints(st.games[gameIdx-1], 'p1'), pp2 = countPoints(st.games[gameIdx-1], 'p2');
+    return gameOverFn(pp1, pp2);
+  })();
 
   let s = `<div class="game-row" data-game="${gameIdx}" style="display:flex;align-items:center;gap:4px;margin:4px 0;font-size:0.85rem">`;
   s += `<span style="width:50px;text-align:right;color:#888">${label}</span>`;
@@ -745,22 +768,43 @@ function renderGameRow(mid, gameIdx, label, isU8) {
   if (over) {
     s += `<span style="color:#27ae60;font-weight:600;font-size:0.75rem">✓</span>`;
     if (g.length > 0) s += `<button class="pt-btn pt-undo" data-mid="${mid}" data-game="${gameIdx}">↩</button>`;
-  } else {
+  } else if (prevDone) {
     s += `<button class="pt-btn pt-plus" data-mid="${mid}" data-game="${gameIdx}" data-player="p1">+A</button>`;
     s += `<button class="pt-btn pt-plus" data-mid="${mid}" data-game="${gameIdx}" data-player="p2">+B</button>`;
+    if (g.length > 0) s += `<button class="pt-btn pt-undo" data-mid="${mid}" data-game="${gameIdx}">↩</button>`;
+  } else {
+    s += `<span style="color:#bbb;font-size:0.8rem">等待上一局结束</span>`;
     if (g.length > 0) s += `<button class="pt-btn pt-undo" data-mid="${mid}" data-game="${gameIdx}">↩</button>`;
   }
   s += '</div>';
   return s;
 }
 
-function renderQuickCard(m, stage) {
+function canScoreKnockout(m, allMatches) {
+  // Check if prerequisite matches for knockout are completed
+  if (m.stage === 'quarterfinal') return true;
+  const koMatches = allMatches.filter(x => x.stage !== 'group');
+  if (m.stage === 'semifinal') {
+    const qfOrders = m.match_order === 5 ? [1, 2] : [3, 4];
+    return qfOrders.every(qo => {
+      const qf = koMatches.find(x => x.stage === 'quarterfinal' && x.match_order === qo);
+      return qf && qf.status === 'completed';
+    });
+  }
+  if (m.stage === 'final') {
+    return koMatches.filter(x => x.stage === 'semifinal').every(x => x.status === 'completed');
+  }
+  return true;
+}
+
+function renderQuickCard(m, stage, allMatches) {
   const p1 = m.player1_name || '—';
   const p2 = m.player2_name || '—';
   const label = stage === 'group'
     ? `${m.group_name}组 第${m.round}轮`
     : ({quarterfinal:'8强',semifinal:'半决赛',final:'决赛'}[m.stage]||m.stage) + ` #${m.match_order}`;
   const isU8 = cat === 'U8';
+  const isKnockout = stage === 'knockout';
   const done = m.status === 'completed';
 
   let s = '<div class="card" style="padding:12px 16px;margin-bottom:10px">';
@@ -768,10 +812,14 @@ function renderQuickCard(m, stage) {
   s += `<div style="font-size:1rem;font-weight:600;margin-bottom:10px;text-align:center">${p1}  vs  ${p2}</div>`;
 
   if (done) {
-    // Show completed result
+    // Show completed result with edit button
     let scoreText = formatScoreDisplay(m);
     const wn = m.winner_name || '?';
     s += `<div style="text-align:center;color:#27ae60;font-weight:600">✓ ${scoreText} → ${wn} 胜</div>`;
+    s += `<div style="text-align:center;margin-top:4px"><button class="btn btn-sm btn-outline qedit-btn" data-id="${m.id}">重新记分</button></div>`;
+  } else if (isKnockout && !canScoreKnockout(m, allMatches || [])) {
+    // Knockout dependency not met
+    s += `<div style="text-align:center;color:#bbb;font-size:0.85rem">⏳ 等待前置比赛完成</div>`;
   } else {
     // Point-by-point UI
     initScoreState(m.id);
@@ -784,11 +832,12 @@ function renderQuickCard(m, stage) {
       } catch(e) {}
     }
     if (isU8) {
-      s += renderGameRow(m.id, 0, '抢11', true);
+      const u8Label = isKnockout ? '先到11分' : '抢11';
+      s += renderGameRow(m.id, 0, u8Label, true, isKnockout);
     } else {
       ensureU10State(m.id);
       for (let i = 0; i < 4; i++) {
-        s += renderGameRow(m.id, i, `第${i+1}局`, false);
+        s += renderGameRow(m.id, i, `第${i+1}局`, false, false);
       }
       // Tiebreak row (shown when needed)
       const tbNeeded = isTiebreakNeeded(m.id);
@@ -806,6 +855,7 @@ function renderQuickCard(m, stage) {
         s += `<span class="gscore-display" style="min-width:60px;text-align:center;font-weight:600;font-family:monospace">${tp1}-${tp2}</span>`;
         if (tbOver) {
           s += `<span style="color:#27ae60;font-weight:600;font-size:0.75rem">✓</span>`;
+          if (tb.length > 0) s += `<button class="pt-btn pt-undo" data-mid="${m.id}" data-game="tb">↩</button>`;
         } else {
           s += `<button class="pt-btn pt-plus" data-mid="${m.id}" data-game="tb" data-player="p1">+A</button>`;
           s += `<button class="pt-btn pt-plus" data-mid="${m.id}" data-game="tb" data-player="p2">+B</button>`;
@@ -816,7 +866,7 @@ function renderQuickCard(m, stage) {
     }
     const [w1, w2] = getGameCounts(m.id);
     s += `<div style="text-align:center;margin-top:8px;font-size:0.85rem;color:#888">总局数: ${w1} - ${w2}</div>`;
-    s += `<div style="text-align:center;margin-top:6px"><button class="btn btn-primary btn-sm qsave-btn" data-id="${m.id}">保存</button></div>`;
+    s += `<div style="text-align:center;margin-top:6px"><button class="btn btn-primary btn-sm qsave-btn" data-id="${m.id}" data-stage="${stage}">保存</button></div>`;
     s += `<div id="qresult-${m.id}" style="text-align:center;margin-top:4px"></div>`;
   }
 
@@ -828,6 +878,10 @@ async function quickSave(mid) {
   const st = scoreState[mid];
   if (!st) return toast('无计分数据', 'error');
   const isU8 = cat === 'U8';
+  // Determine if this is a knockout match
+  const btn = document.querySelector(`.qsave-btn[data-id="${mid}"]`);
+  const matchStage = btn?.dataset.stage || 'group';
+  const isKnockout = matchStage === 'knockout';
 
   let s1 = 0, s2 = 0, tb1 = null, tb2 = null;
   const gameDetails = { games: [], tiebreak: null };
@@ -835,7 +889,11 @@ async function quickSave(mid) {
   if (isU8) {
     const g = st.games[0] || [];
     const p1c = countPoints(g, 'p1'), p2c = countPoints(g, 'p2');
-    if (!isU8GameOver(p1c, p2c)) return toast('比赛未结束（需先到11分且领先2分）', 'error');
+    const gameOverFn = isKnockout ? isU8KnockoutGameOver : isU8GameOver;
+    if (!gameOverFn(p1c, p2c)) {
+      const msg = isKnockout ? '比赛未结束（需先到11分）' : '比赛未结束（需先到11分且领先2分）';
+      return toast(msg, 'error');
+    }
     s1 = p1c; s2 = p2c;
     gameDetails.games = [{ points: [...g] }];
   } else {
@@ -864,11 +922,20 @@ async function quickSave(mid) {
     const resultEl = document.getElementById('qresult-'+mid);
     let text = `${s1}-${s2}`;
     if (tb1 != null) text += ` (抢七 ${tb1}-${tb2})`;
-    const wn = r.winner_id;
     if (resultEl) resultEl.innerHTML = `<span style="color:#27ae60;font-weight:600">✓ ${text}  → 已保存</span>`;
     // Refresh card to completed view
     setTimeout(() => loadContent(), 600);
     toast('已保存');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function quickEdit(mid) {
+  if (!confirm('确定重新记分？将清除当前比分。')) return;
+  try {
+    await api('/api/matches/'+mid+'/score', {method:'DELETE'});
+    delete scoreState[mid];
+    quickPending = false;
+    loadContent();
   } catch(e) { toast(e.message, 'error'); }
 }
 

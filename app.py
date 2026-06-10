@@ -8,6 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import os
 import secrets
 import json
+import time
 import csv
 import io
 import zipfile
@@ -77,8 +78,8 @@ def check_auth(request: Request):
     session = request.session
     role = session.get("role")
     ts = session.get("ts", 0)
-    import time
     if role and (time.time() - ts) < AUTH_TIMEOUT:
+        session["ts"] = time.time()  # rolling refresh
         return role
     return None
 
@@ -121,7 +122,6 @@ def login(request: Request, password: str = Form(...)):
             "error": "密码错误",
         }, status_code=401)
 
-    import time
     request.session.update({"role": role, "ts": time.time()})
     return RedirectResponse("/admin", status_code=303)
 
@@ -446,6 +446,16 @@ def api_update_score(match_id: int, data: ScoreUpdate, request: Request):
         _advance_winner(match["category"], match["stage"], match["match_order"], winner_id)
 
     return {"status": "ok", "winner_id": winner_id}
+
+
+@app.delete("/api/matches/{match_id}/score")
+def api_reset_score(match_id: int, request: Request):
+    require_role(request, ["admin"])
+    match = db.get_match(match_id)
+    if not match:
+        raise HTTPException(404, "比赛不存在")
+    db.reset_match_score(match_id)
+    return {"status": "ok"}
 
 
 def _advance_winner(category: str, stage: str, match_order: int, winner_id: int):
