@@ -130,7 +130,13 @@ def login(request: Request, password: str = Form(...), referee_name: str = Form(
         ref_name = referee_name.strip()
         if not ref_name:
             return templates.TemplateResponse(request=request, name="admin/login.html", context={
-                "error": "请选择或输入裁判员姓名",
+                "error": "请选择裁判员姓名",
+            }, status_code=401)
+        # Verify name belongs to an active referee
+        active_refs = {r["name"] for r in db.get_referees(active_only=True)}
+        if ref_name not in active_refs:
+            return templates.TemplateResponse(request=request, name="admin/login.html", context={
+                "error": f"裁判员「{ref_name}」不存在或已停用",
             }, status_code=401)
     else:
         return templates.TemplateResponse(request=request, name="admin/login.html", context={

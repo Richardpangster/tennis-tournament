@@ -55,10 +55,9 @@
   <form method="post" action="/admin/login" id="login-form">
     <input type="password" name="password" id="password" placeholder="输入密码" autofocus>
     <div id="referee-row" style="display:none">
-      <select id="referee-select" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:1rem;margin-bottom:8px;text-align:center">
+      <select name="referee_name" id="referee-select" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:1rem;margin-bottom:8px;text-align:center">
         <option value="">— 选择你的姓名 —</option>
       </select>
-      <input type="text" name="referee_name" id="referee-name" placeholder="或手动输入姓名" style="display:none">
     </div>
     <button type="submit">登录</button>
   </form>
@@ -81,11 +80,13 @@ fetch('/api/referees?active_only=true')
         opt.textContent = r.name;
         sel.appendChild(opt);
       });
+    } else {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '暂无可用裁判员，请联系管理员添加';
+      opt.disabled = true;
+      sel.appendChild(opt);
     }
-    const others = document.createElement('option');
-    others.value = '__other__';
-    others.textContent = '其他（手动输入）…';
-    sel.appendChild(others);
   })
   .catch(() => {});
 
@@ -97,20 +98,6 @@ document.getElementById('password').addEventListener('blur', function() {
   }
 });
 
-// Toggle manual input when "其他" selected
-document.getElementById('referee-select').addEventListener('change', function() {
-  const manual = document.getElementById('referee-name');
-  if (this.value === '__other__') {
-    manual.style.display = 'block';
-    manual.focus();
-    manual.name = 'referee_name';
-    this.name = '';
-  } else {
-    manual.style.display = 'none';
-    manual.name = '';
-    this.name = 'referee_name';
-  }
-});
 </script>
 
 </body>
