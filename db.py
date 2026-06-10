@@ -47,7 +47,7 @@ def init_db():
         );
     """
     )
-    # Migration: add tb columns if they don't exist
+    # Migration: add columns if they don't exist
     try:
         conn.execute("ALTER TABLE matches ADD COLUMN tb_score1 INTEGER")
     except:
@@ -60,6 +60,20 @@ def init_db():
         conn.execute("ALTER TABLE matches ADD COLUMN game_details TEXT")
     except:
         pass
+    try:
+        conn.execute("ALTER TABLE matches ADD COLUMN scored_by TEXT")
+    except:
+        pass
+
+    # Referees table
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS referees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
     conn.commit()
     conn.close()
 
@@ -133,6 +147,90 @@ def get_player_count(category: str) -> int:
     return row["cnt"]
 
 
+# ── Referee CRUD ──
+
+def get_referees(active_only: bool = False) -> list[dict]:
+    conn = get_db()
+    if active_only:
+        rows = conn.execute(
+            """SELECT r.id, r.name, r.active, r.created_at,
+                      (SELECT COUNT(*) FROM matches WHERE scored_by = r.name) as scored_count
+               FROM referees r WHERE r.active=1 ORDER BY r.id"""
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """SELECT r.id, r.name, r.active, r.created_at,
+                      (SELECT COUNT(*) FROM matches WHERE scored_by = r.name) as scored_count
+               FROM referees r ORDER BY r.id"""
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_referee(name: str) -> int:
+    conn = get_db()
+    cur = conn.execute("INSERT INTO referees (name) VALUES (?)", (name,))
+    conn.commit()
+    rid = cur.lastrowid
+    conn.close()
+    return rid
+
+
+def update_referee(referee_id: int, name: str = None, active: int = None) -> bool:
+    """Update referee name or active status. If renaming, also migrate scored_by records."""
+    conn = get_db()
+    # Get current name for migration
+    old = conn.execute("SELECT name FROM referees WHERE id=?", (referee_id,)).fetchone()
+    if not old:
+        conn.close()
+        return False
+    old_name = old["name"]
+
+    fields = []
+    values = []
+    if name is not None:
+        fields.append("name=?")
+        values.append(name)
+    if active is not None:
+        fields.append("active=?")
+        values.append(active)
+    if not fields:
+        conn.close()
+        return False
+    values.append(referee_id)
+    conn.execute(f"UPDATE referees SET {', '.join(fields)} WHERE id=?", values)
+    # Migrate scored_by to new name
+    if name is not None and name != old_name:
+        conn.execute("UPDATE matches SET scored_by=? WHERE scored_by=?", (name, old_name))
+    conn.commit()
+    conn.close()
+    return True
+
+
+def delete_referee(referee_id: int) -> bool:
+    """Delete a referee. Returns False if the referee has scored matches."""
+    conn = get_db()
+    # Check if this referee has scored any matches
+    row = conn.execute(
+        "SELECT name FROM referees WHERE id=?", (referee_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return False
+    name = row["name"]
+    scored = conn.execute(
+        "SELECT COUNT(*) as cnt FROM matches WHERE scored_by=?",
+        (name,),
+    ).fetchone()["cnt"]
+    if scored > 0:
+        conn.close()
+        return False  # Cannot delete: has score history
+    conn.execute("DELETE FROM referees WHERE id=?", (referee_id,))
+    conn.commit()
+    conn.close()
+    return True
+
+
 # ── Match CRUD ──
 
 def create_matches_batch(match_list: list[dict]) -> list[int]:
@@ -199,11 +297,11 @@ def get_match(match_id: int) -> dict | None:
 
 def update_match_score(match_id: int, score1: int, score2: int, winner_id: int | None,
                        tb_score1: int = None, tb_score2: int = None,
-                       game_details: str = None):
+                       game_details: str = None, scored_by: str = None):
     conn = get_db()
     conn.execute(
-        "UPDATE matches SET score1=?, score2=?, winner_id=?, status='completed', tb_score1=?, tb_score2=?, game_details=? WHERE id=?",
-        (score1, score2, winner_id, tb_score1, tb_score2, game_details, match_id),
+        "UPDATE matches SET score1=?, score2=?, winner_id=?, status='completed', tb_score1=?, tb_score2=?, game_details=?, scored_by=? WHERE id=?",
+        (score1, score2, winner_id, tb_score1, tb_score2, game_details, scored_by, match_id),
     )
     conn.commit()
     conn.close()
@@ -225,7 +323,7 @@ def reset_match_score(match_id: int):
     conn = get_db()
     conn.execute(
         "UPDATE matches SET score1=NULL, score2=NULL, winner_id=NULL, "
-        "status='pending', tb_score1=NULL, tb_score2=NULL, game_details=NULL WHERE id=?",
+        "status='pending', tb_score1=NULL, tb_score2=NULL, game_details=NULL, scored_by=NULL WHERE id=?",
         (match_id,),
     )
     conn.commit()

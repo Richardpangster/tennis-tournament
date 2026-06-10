@@ -52,8 +52,13 @@
   <div class="error">{{ error }}</div>
   {% endif %}
 
-  <form method="post" action="/admin/login">
-    <input type="password" name="password" placeholder="输入密码" autofocus>
+  <form method="post" action="/admin/login" id="login-form">
+    <input type="password" name="password" id="password" placeholder="输入密码" autofocus>
+    <div id="referee-row" style="display:none">
+      <select name="referee_name" id="referee-select" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:1rem;margin-bottom:8px;text-align:center">
+        <option value="">— 选择你的姓名 —</option>
+      </select>
+    </div>
     <button type="submit">登录</button>
   </form>
 
@@ -61,6 +66,39 @@
     管理员密码：全功能 · 裁判员密码：仅记分
   </p>
 </div>
+
+<script>
+// Load referee list on page load
+fetch('/api/referees?active_only=true')
+  .then(r => r.json())
+  .then(referees => {
+    const sel = document.getElementById('referee-select');
+    if (referees.length) {
+      referees.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.name;
+        opt.textContent = r.name;
+        sel.appendChild(opt);
+      });
+    } else {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = '暂无可用裁判员，请联系管理员添加';
+      opt.disabled = true;
+      sel.appendChild(opt);
+    }
+  })
+  .catch(() => {});
+
+// Show referee name row when password loses focus (not admin)
+document.getElementById('password').addEventListener('blur', function() {
+  // Show selector for any non-empty password — will show error if referee doesn't pick name
+  if (this.value) {
+    document.getElementById('referee-row').style.display = 'block';
+  }
+});
+
+</script>
 
 </body>
 </html>
