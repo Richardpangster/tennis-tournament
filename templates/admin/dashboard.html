@@ -48,7 +48,7 @@ const CATS = ['U8','U10','U12','U14'];
 let cat = 'U8';
 let func = '{{ "quick" if role == "referee" else "players" }}';
 const ROLE = '{{ role }}';
-const REF_NAME = '{{ referee_name }}';
+const REF_NAME = {{ referee_name | tojson }};
 
 function escapeHtml(s) {
   if (!s) return '';
