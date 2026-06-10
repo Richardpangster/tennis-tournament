@@ -18,6 +18,17 @@ import draw
 
 CATEGORIES = ["U8", "U10", "U12", "U14"]
 
+CATEGORY_CONFIG = {
+    "U8":  {"max_players": 16, "group_names": ["A", "B", "C", "D"]},
+    "U10": {"max_players": 16, "group_names": ["A", "B", "C", "D"]},
+    "U12": {"max_players": 16, "group_names": ["A", "B", "C", "D"]},
+    "U14": {"max_players": 8,  "group_names": ["A", "B"]},
+}
+
+
+def get_cat_cfg(category: str) -> dict:
+    return CATEGORY_CONFIG[category]
+
 # Auth: set env vars for fixed passwords, otherwise auto-generate on startup
 ADMIN_PASSWORD = os.getenv("TOURNAMENT_ADMIN_PW") or secrets.token_hex(4)
 REFEREE_PASSWORD = os.getenv("TOURNAMENT_REFEREE_PW") or secrets.token_hex(4)
@@ -168,9 +179,11 @@ def admin_page(request: Request):
 def public_home(request: Request):
     try:
         counts = {c: db.get_player_count(c) for c in CATEGORIES}
+        max_players = {c: get_cat_cfg(c)["max_players"] for c in CATEGORIES}
         return templates.TemplateResponse(request=request, name="public/index.html", context={
             "categories": CATEGORIES,
             "counts": counts,
+            "max_players": max_players,
         })
     except Exception as e:
         import traceback
@@ -192,6 +205,7 @@ def public_category(request: Request, category: str):
     try:
         return templates.TemplateResponse(request=request, name="public/category.html", context={
             "category": category,
+            "group_names": get_cat_cfg(category)["group_names"],
         })
     except Exception as e:
         return HTMLResponse(f"<h2>Error</h2><pre>{e}</pre>", status_code=500)
@@ -214,8 +228,9 @@ def api_add_player(data: PlayerCreate, request: Request):
     require_role(request, ["admin"])
     if data.category not in CATEGORIES:
         raise HTTPException(400, "无效组别")
-    if db.get_player_count(data.category) >= 16:
-        raise HTTPException(400, f"{data.category} 组已满 16 人")
+    cfg = get_cat_cfg(data.category)
+    if db.get_player_count(data.category) >= cfg["max_players"]:
+        raise HTTPException(400, f"{data.category} 组已满 {cfg['max_players']} 人")
     pid = db.add_player(
         name=data.name,
         phone=data.phone,
@@ -315,7 +330,8 @@ def _do_import_rows(rows: list[dict], headers: list[str], force_cat: str):
             errors.append(f"第{row_num}行: {name} 手机号格式不对，跳过")
             continue
 
-        if quotas[cat] >= 16:
+        cfg = get_cat_cfg(cat)
+        if quotas[cat] >= cfg["max_players"]:
             result[cat]["skipped"] += 1
             continue
 
@@ -326,7 +342,7 @@ def _do_import_rows(rows: list[dict], headers: list[str], force_cat: str):
 
     total_imported = sum(r["imported"] for r in result.values())
     total_skipped = sum(r["skipped"] for r in result.values())
-    by_cat = {c: {"imported": result[c]["imported"], "remaining": 16 - quotas[c]}
+    by_cat = {c: {"imported": result[c]["imported"], "remaining": get_cat_cfg(c)["max_players"] - quotas[c]}
               for c in CATEGORIES if result[c]["imported"] > 0 or result[c]["skipped"] > 0}
 
     return {
@@ -397,16 +413,21 @@ def api_draw_groups(category: str, request: Request):
     if db.has_group_stage(category):
         raise HTTPException(400, "已分组，请先清除再重新抽签")
 
+    cfg = get_cat_cfg(category)
+    # Guard: detect old-format groups from a previous config
+    orphaned = db.get_group_names_in_data(category, cfg["group_names"])
+    if orphaned:
+        raise HTTPException(400, f"检测到旧赛制数据（{','.join(orphaned)}组），请先「清除分组」后重新抽签")
     players = db.get_players(category)
-    if len(players) != 16:
-        raise HTTPException(400, f"需要恰好 16 人，当前 {len(players)} 人")
+    if len(players) != cfg["max_players"]:
+        raise HTTPException(400, f"需要恰好 {cfg['max_players']} 人，当前 {len(players)} 人")
 
-    groups = draw.draw_groups([p["id"] for p in players])
+    groups = draw.draw_groups([p["id"] for p in players], cfg["group_names"])
     schedule = draw.round_robin_schedule()
 
     match_order = 0
     match_data = []
-    for group_name in ["A", "B", "C", "D"]:
+    for group_name in cfg["group_names"]:
         pids = groups[group_name]  # 4 player ids
         for round_num, pairs in schedule:
             for pos1, pos2 in pairs:
@@ -492,44 +513,51 @@ def _clear_downstream(category: str, stage: str, match_order: int):
     Cascades all the way to the final if needed."""
     matches = db.get_matches(category)
     knockout = [m for m in matches if m["stage"] != "group"]
+    n_groups = len(get_cat_cfg(category)["group_names"])
 
-    # Step 1: Determine immediate downstream target
+    # Determine immediate downstream target
+    target_stage = None
+    target_order = None
+    slot = None
+
     if stage == "quarterfinal":
-        sf_order = 5 if match_order <= 2 else 6
-        slot = "player1_id" if match_order in (1, 3) else "player2_id"
         target_stage = "semifinal"
-    else:  # semifinal
-        sf_order = 7
-        slot = "player1_id" if match_order == 5 else "player2_id"
+        target_order = 5 if match_order <= 2 else 6
+        slot = "player1_id" if match_order in (1, 3) else "player2_id"
+    elif stage == "semifinal":
         target_stage = "final"
+        if n_groups == 2:
+            # SF 1(A1vsB2) → Final-3 player1, SF 2(B1vsA2) → Final-3 player2
+            target_order = 3
+            slot = "player1_id" if match_order == 1 else "player2_id"
+        else:
+            target_order = 7
+            slot = "player1_id" if match_order == 5 else "player2_id"
 
-    target = next((m for m in knockout if m["stage"] == target_stage and m["match_order"] == sf_order), None)
+    if not target_stage:
+        return
+
+    target = next((m for m in knockout if m["stage"] == target_stage and m["match_order"] == target_order), None)
     if not target:
         return
 
-    # Track whether downstream was completed before we reset it
     was_completed = target["status"] == "completed"
-
-    # Reset downstream match if it was completed (stale score)
     if was_completed:
         db.reset_match_score(target["id"])
-    # Clear the player slot
     db.update_match_player(target["id"], slot, None)
 
-    # Step 2: Cascade to final
+    # Cascade: QF → SF → Final
     if stage == "quarterfinal":
-        # The SF was just cleared; if it had previously advanced a winner to
-        # the final, clear that final slot too
-        sf_match = target  # the SF we just cleared
+        sf_match = target
         final = next((m for m in knockout if m["stage"] == "final"), None)
         if final:
-            # Determine which slot this SF fills in the final
             final_slot = "player1_id" if sf_match["match_order"] == 5 else "player2_id"
             if final[final_slot] is not None:
                 db.update_match_player(final["id"], final_slot, None)
             if final["status"] == "completed":
                 db.reset_match_score(final["id"])
     elif stage == "semifinal":
+        # For both 2-group and 4-group: SF cleared, also reset Final if completed
         final = next((m for m in knockout if m["stage"] == "final"), None)
         if final and final["status"] == "completed":
             db.reset_match_score(final["id"])
@@ -539,19 +567,29 @@ def _advance_winner(category: str, stage: str, match_order: int, winner_id: int)
     """After QF/SF completed, fill winner into next round's match."""
     matches = db.get_matches(category)
     knockout = [m for m in matches if m["stage"] != "group"]
+    n_groups = len(get_cat_cfg(category)["group_names"])
+
+    target_stage = None
+    target_order = None
+    slot = None
 
     if stage == "quarterfinal":
-        sf_order = 5 if match_order <= 2 else 6
-        slot = "player1_id" if match_order in (1, 3) else "player2_id"
         target_stage = "semifinal"
-    else:  # semifinal
-        sf_order = 7
-        slot = "player1_id" if match_order == 5 else "player2_id"
+        target_order = 5 if match_order <= 2 else 6
+        slot = "player1_id" if match_order in (1, 3) else "player2_id"
+    elif stage == "semifinal":
         target_stage = "final"
+        if n_groups == 2:
+            target_order = 3
+            slot = "player1_id" if match_order == 1 else "player2_id"
+        else:
+            target_order = 7
+            slot = "player1_id" if match_order == 5 else "player2_id"
 
-    target = next((m for m in knockout if m["stage"] == target_stage and m["match_order"] == sf_order), None)
-    if target:
-        db.update_match_player(target["id"], slot, winner_id)
+    if target_stage:
+        target = next((m for m in knockout if m["stage"] == target_stage and m["match_order"] == target_order), None)
+        if target:
+            db.update_match_player(target["id"], slot, winner_id)
 
 
 # ═══════════════ Standings API ═══════════════
@@ -571,53 +609,54 @@ def api_draw_top8(category: str, request: Request):
     if category not in CATEGORIES:
         raise HTTPException(400, "无效组别")
     if not db.all_group_matches_done(category):
-        raise HTTPException(400, "小组赛尚未全部完成，无法生成8强")
+        raise HTTPException(400, "小组赛尚未全部完成，无法生成淘汰赛")
     if db.has_knockout_stage(category):
         raise HTTPException(400, "淘汰赛已生成，请先清除")
 
+    cfg = get_cat_cfg(category)
+    # Guard: detect old-format groups from a previous config
+    orphaned = db.get_group_names_in_data(category, cfg["group_names"])
+    if orphaned:
+        raise HTTPException(400, f"检测到旧赛制数据（{','.join(orphaned)}组），请先「清除分组」后重新抽签")
+    gn = cfg["group_names"]
+
     standings = db.get_group_standings(category)
-    # Extract A1, A2, B1, B2, C1, C2, D1, D2
     top2 = {}
-    for g in ["A", "B", "C", "D"]:
+    for g in gn:
         gs = standings.get(g, [])
         if len(gs) < 2:
             raise HTTPException(400, f"{g}组出线人数不足")
         top2[f"{g}1"] = gs[0]
         top2[f"{g}2"] = gs[1]
 
-    # Fixed bracket: A1vsC2, B1vsD2, C1vsA2, D1vsB2
-    matchups = [
-        (top2["A1"]["player_id"], top2["C2"]["player_id"]),
-        (top2["B1"]["player_id"], top2["D2"]["player_id"]),
-        (top2["C1"]["player_id"], top2["A2"]["player_id"]),
-        (top2["D1"]["player_id"], top2["B2"]["player_id"]),
-    ]
-
-    bracket = draw.generate_knockout_bracket(matchups)
+    bracket = draw.generate_knockout_bracket(top2, gn)
     for m in bracket:
         m["category"] = category
     db.create_matches_batch(bracket)
 
     # Return with names
-    players = {p["id"]: p["name"] for p in db.get_players(category)}
-    qualifier_names = [
-        {"group": "A1", "name": top2["A1"]["player_name"]},
-        {"group": "A2", "name": top2["A2"]["player_name"]},
-        {"group": "B1", "name": top2["B1"]["player_name"]},
-        {"group": "B2", "name": top2["B2"]["player_name"]},
-        {"group": "C1", "name": top2["C1"]["player_name"]},
-        {"group": "C2", "name": top2["C2"]["player_name"]},
-        {"group": "D1", "name": top2["D1"]["player_name"]},
-        {"group": "D2", "name": top2["D2"]["player_name"]},
-    ]
-    return {
-        "status": "ok",
-        "matchups": [
+    qualifier_names = []
+    for g in gn:
+        for rank in ["1", "2"]:
+            qualifier_names.append({"group": f"{g}{rank}", "name": top2[f"{g}{rank}"]["player_name"]})
+
+    matchup_labels = []
+    if len(gn) == 4:
+        matchup_labels = [
             f"A1 {top2['A1']['player_name']} vs C2 {top2['C2']['player_name']}",
             f"B1 {top2['B1']['player_name']} vs D2 {top2['D2']['player_name']}",
             f"C1 {top2['C1']['player_name']} vs A2 {top2['A2']['player_name']}",
             f"D1 {top2['D1']['player_name']} vs B2 {top2['B2']['player_name']}",
-        ],
+        ]
+    else:
+        matchup_labels = [
+            f"A1 {top2['A1']['player_name']} vs B2 {top2['B2']['player_name']}",
+            f"B1 {top2['B1']['player_name']} vs A2 {top2['A2']['player_name']}",
+        ]
+
+    return {
+        "status": "ok",
+        "matchups": matchup_labels,
     }
 
 

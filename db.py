@@ -378,6 +378,18 @@ def has_knockout_stage(category: str) -> bool:
     return row["cnt"] > 0
 
 
+def get_group_names_in_data(category: str, allowed: list[str]) -> list[str]:
+    """Return group names from match data that are NOT in the allowed list.
+    Used to detect old-format data after a config change (e.g. U14 from 4→2 groups)."""
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT DISTINCT group_name FROM matches WHERE category=? AND stage='group' ORDER BY group_name",
+        (category,),
+    ).fetchall()
+    conn.close()
+    return [r["group_name"] for r in rows if r["group_name"] not in allowed]
+
+
 # ── Standings ──
 
 def get_group_standings(category: str) -> dict:
