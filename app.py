@@ -450,12 +450,44 @@ def api_update_score(match_id: int, data: ScoreUpdate, request: Request):
 
 @app.delete("/api/matches/{match_id}/score")
 def api_reset_score(match_id: int, request: Request):
-    require_role(request, ["admin"])
+    require_role(request, ["admin", "referee"])
     match = db.get_match(match_id)
     if not match:
         raise HTTPException(404, "比赛不存在")
+    # Cascade: if this is a QF/SF, clear the winner from downstream matches
+    if match["stage"] in ("quarterfinal", "semifinal") and match["status"] == "completed":
+        _clear_downstream(match["category"], match["stage"], match["match_order"])
     db.reset_match_score(match_id)
     return {"status": "ok"}
+
+
+def _clear_downstream(category: str, stage: str, match_order: int):
+    """When resetting a QF/SF, clear the winner slot in the downstream match
+    and reset any completed downstream match to prevent stale scores."""
+    matches = db.get_matches(category)
+    knockout = [m for m in matches if m["stage"] != "group"]
+
+    if stage == "quarterfinal":
+        sf_order = 5 if match_order <= 2 else 6
+        slot = "player1_id" if match_order in (1, 3) else "player2_id"
+        target_stage = "semifinal"
+    else:  # semifinal
+        sf_order = 7
+        slot = "player1_id" if match_order == 5 else "player2_id"
+        target_stage = "final"
+
+    target = next((m for m in knockout if m["stage"] == target_stage and m["match_order"] == sf_order), None)
+    if target:
+        # Reset downstream match if it was completed (stale score)
+        if target["status"] == "completed":
+            db.reset_match_score(target["id"])
+        # Clear the player slot
+        db.update_match_player(target["id"], slot, None)
+        # Cascade further: if we reset an SF, also clear the final
+        if stage == "semifinal":
+            final = next((m for m in knockout if m["stage"] == "final"), None)
+            if final and final["status"] == "completed":
+                db.reset_match_score(final["id"])
 
 
 def _advance_winner(category: str, stage: str, match_order: int, winner_id: int):
