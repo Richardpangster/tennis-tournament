@@ -8,6 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import os
 import secrets
 import json
+import time
 import csv
 import io
 import zipfile
@@ -77,8 +78,8 @@ def check_auth(request: Request):
     session = request.session
     role = session.get("role")
     ts = session.get("ts", 0)
-    import time
     if role and (time.time() - ts) < AUTH_TIMEOUT:
+        session["ts"] = time.time()  # rolling refresh
         return role
     return None
 
@@ -121,7 +122,6 @@ def login(request: Request, password: str = Form(...)):
             "error": "密码错误",
         }, status_code=401)
 
-    import time
     request.session.update({"role": role, "ts": time.time()})
     return RedirectResponse("/admin", status_code=303)
 
@@ -446,6 +446,68 @@ def api_update_score(match_id: int, data: ScoreUpdate, request: Request):
         _advance_winner(match["category"], match["stage"], match["match_order"], winner_id)
 
     return {"status": "ok", "winner_id": winner_id}
+
+
+@app.delete("/api/matches/{match_id}/score")
+def api_reset_score(match_id: int, request: Request):
+    require_role(request, ["admin"])
+    match = db.get_match(match_id)
+    if not match:
+        raise HTTPException(404, "比赛不存在")
+    # Cascade: if this is a QF/SF, clear the winner from downstream matches
+    if match["stage"] in ("quarterfinal", "semifinal") and match["status"] == "completed":
+        _clear_downstream(match["category"], match["stage"], match["match_order"])
+    db.reset_match_score(match_id)
+    return {"status": "ok"}
+
+
+def _clear_downstream(category: str, stage: str, match_order: int):
+    """When resetting a QF/SF, clear the winner slot in the downstream match
+    and reset any completed downstream matches to prevent stale scores.
+    Cascades all the way to the final if needed."""
+    matches = db.get_matches(category)
+    knockout = [m for m in matches if m["stage"] != "group"]
+
+    # Step 1: Determine immediate downstream target
+    if stage == "quarterfinal":
+        sf_order = 5 if match_order <= 2 else 6
+        slot = "player1_id" if match_order in (1, 3) else "player2_id"
+        target_stage = "semifinal"
+    else:  # semifinal
+        sf_order = 7
+        slot = "player1_id" if match_order == 5 else "player2_id"
+        target_stage = "final"
+
+    target = next((m for m in knockout if m["stage"] == target_stage and m["match_order"] == sf_order), None)
+    if not target:
+        return
+
+    # Track whether downstream was completed before we reset it
+    was_completed = target["status"] == "completed"
+
+    # Reset downstream match if it was completed (stale score)
+    if was_completed:
+        db.reset_match_score(target["id"])
+    # Clear the player slot
+    db.update_match_player(target["id"], slot, None)
+
+    # Step 2: Cascade to final
+    if stage == "quarterfinal":
+        # The SF was just cleared; if it had previously advanced a winner to
+        # the final, clear that final slot too
+        sf_match = target  # the SF we just cleared
+        final = next((m for m in knockout if m["stage"] == "final"), None)
+        if final:
+            # Determine which slot this SF fills in the final
+            final_slot = "player1_id" if sf_match["match_order"] == 5 else "player2_id"
+            if final[final_slot] is not None:
+                db.update_match_player(final["id"], final_slot, None)
+            if final["status"] == "completed":
+                db.reset_match_score(final["id"])
+    elif stage == "semifinal":
+        final = next((m for m in knockout if m["stage"] == "final"), None)
+        if final and final["status"] == "completed":
+            db.reset_match_score(final["id"])
 
 
 def _advance_winner(category: str, stage: str, match_order: int, winner_id: int):
