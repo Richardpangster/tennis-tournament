@@ -450,7 +450,7 @@ def api_update_score(match_id: int, data: ScoreUpdate, request: Request):
 
 @app.delete("/api/matches/{match_id}/score")
 def api_reset_score(match_id: int, request: Request):
-    require_role(request, ["admin", "referee"])
+    require_role(request, ["admin"])
     match = db.get_match(match_id)
     if not match:
         raise HTTPException(404, "比赛不存在")

@@ -46,6 +46,7 @@
 const CATS = ['U8','U10','U12','U14'];
 let cat = 'U8';
 let func = '{{ "quick" if role == "referee" else "players" }}';
+const ROLE = '{{ role }}';
 
 function scoreUnit(c) { return c === 'U8' ? '分' : '局'; }
 function scoreRule(c) { return c === 'U8' ? '一局11分定胜负' : '4局无占先，2:2抢7决胜（如2:2抢7胜，直接输抢七比分如7-5）'; }
@@ -816,7 +817,9 @@ function renderQuickCard(m, stage, allMatches) {
     let scoreText = formatScoreDisplay(m);
     const wn = m.winner_name || '?';
     s += `<div style="text-align:center;color:#27ae60;font-weight:600">✓ ${scoreText} → ${wn} 胜</div>`;
-    s += `<div style="text-align:center;margin-top:4px"><button class="btn btn-sm btn-outline qedit-btn" data-id="${m.id}">重新记分</button></div>`;
+    if (ROLE === 'admin') {
+      s += `<div style="text-align:center;margin-top:4px"><button class="btn btn-sm btn-outline qedit-btn" data-id="${m.id}">重新记分</button></div>`;
+    }
   } else if (isKnockout && !canScoreKnockout(m, allMatches || [])) {
     // Knockout dependency not met
     s += `<div style="text-align:center;color:#bbb;font-size:0.85rem">⏳ 等待前置比赛完成</div>`;
