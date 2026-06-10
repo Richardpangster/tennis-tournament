@@ -177,8 +177,15 @@ def add_referee(name: str) -> int:
 
 
 def update_referee(referee_id: int, name: str = None, active: int = None) -> bool:
-    """Update referee name or active status. Returns True if updated."""
+    """Update referee name or active status. If renaming, also migrate scored_by records."""
     conn = get_db()
+    # Get current name for migration
+    old = conn.execute("SELECT name FROM referees WHERE id=?", (referee_id,)).fetchone()
+    if not old:
+        conn.close()
+        return False
+    old_name = old["name"]
+
     fields = []
     values = []
     if name is not None:
@@ -191,11 +198,13 @@ def update_referee(referee_id: int, name: str = None, active: int = None) -> boo
         conn.close()
         return False
     values.append(referee_id)
-    cur = conn.execute(f"UPDATE referees SET {', '.join(fields)} WHERE id=?", values)
+    conn.execute(f"UPDATE referees SET {', '.join(fields)} WHERE id=?", values)
+    # Migrate scored_by to new name
+    if name is not None and name != old_name:
+        conn.execute("UPDATE matches SET scored_by=? WHERE scored_by=?", (name, old_name))
     conn.commit()
-    updated = cur.rowcount > 0
     conn.close()
-    return updated
+    return True
 
 
 def delete_referee(referee_id: int) -> bool:
