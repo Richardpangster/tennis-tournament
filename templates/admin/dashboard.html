@@ -168,6 +168,10 @@ document.getElementById('func-tabs').querySelectorAll('.tab').forEach(el => {
 function switchCategory() {
   document.querySelectorAll('#category-tabs .tab').forEach(t => t.classList.remove('active'));
   document.querySelector(`#category-tabs [data-cat="${cat}"]`).classList.add('active');
+  // Reset stale group filter if the new category doesn't have that group
+  if (quickFilter !== 'all' && !CAT_CONFIG[cat].groups.includes(quickFilter)) {
+    quickFilter = 'all';
+  }
   loadContent();
 }
 
