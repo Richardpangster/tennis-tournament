@@ -44,16 +44,6 @@
   <p style="margin-top:12px;font-size:0.9rem">U8/U10 上午 · U12/U14 下午</p>
 </div>
 
-<div class="category-grid">
-  {% for c in categories %}
-  <a href="/public/{{ c }}" class="category-card">
-    <h2>{{ c }}</h2>
-    <div class="meta">{{ counts[c] }} / {{ max_players[c] }} 人</div>
-    {% if counts[c] >= max_players[c] %}<span class="badge badge-full">已满</span>{% endif %}
-  </a>
-  {% endfor %}
-</div>
-
 {% if links %}
 <div class="service-links">
   {% for link in links %}
@@ -66,6 +56,16 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<div class="category-grid">
+  {% for c in categories %}
+  <a href="/public/{{ c }}" class="category-card">
+    <h2>{{ c }}</h2>
+    <div class="meta">{{ counts[c] }} / {{ max_players[c] }} 人</div>
+    {% if counts[c] >= max_players[c] %}<span class="badge badge-full">已满</span>{% endif %}
+  </a>
+  {% endfor %}
+</div>
 
 <div style="text-align:center;padding:24px;color:#aaa;font-size:0.85rem">
   <p>📱 扫码查看实时赛程与比分</p>
