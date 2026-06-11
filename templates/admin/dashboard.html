@@ -14,8 +14,6 @@
       <h1>🎾 齐动力网球会员杯积分赛（端午站）</h1>
       <div class="sub">管理后台 — 2026年6月19日 · 北京科技大学求实气膜网球馆</div>
       <div class="sub" style="margin-top:8px">
-        📋 <a href="https://ddwp9dyl.jsjform.com/f/z8H1Sz" target="_blank" style="color:#fff;text-decoration:underline">报名表链接</a>
-        · 6月6日12:00 开放 · 6月12日20:00 截止
         · <a href="/public" target="_blank" style="color:#fff;text-decoration:underline">公开展示页</a>
       </div>
     </div>
@@ -36,6 +34,7 @@
   <button class="tab" data-func="group">小组赛</button>
   <button class="tab" data-func="knockout">淘汰赛</button>
   <button class="tab" data-func="referees">裁判员</button>
+  <button class="tab" data-func="links">服务链接</button>
   {% endif %}
   <button class="tab {{ 'active' if role=='referee' else '' }}" data-func="quick">快速记分</button>
 </div>
@@ -196,6 +195,7 @@ async function loadContent() {
     else if (func === 'group') await loadGroupStage(el);
     else if (func === 'knockout') await loadKnockout(el);
     else if (func === 'referees') await loadReferees(el);
+    else if (func === 'links') await loadLinks(el);
     else if (func === 'quick') await loadQuickScore(el);
   } catch(e) {
     el.innerHTML = `<div class="card" style="color:#e74c3c">⚠ ${e.message}</div>`;
@@ -468,6 +468,112 @@ async function deleteReferee(id, name) {
   if (!confirm(`确定删除裁判员「${name}」？`)) return;
   try {
     await api('/api/referees/'+id, {method:'DELETE'});
+    toast('已删除');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ═══════════ Link Management ═══════════
+async function loadLinks(el) {
+  const links = await api('/api/links');
+  let html = '<div class="card"><h3>服务链接管理</h3>';
+  html += '<p style="font-size:0.85rem;color:#888;margin-bottom:12px">管理公开展示页上的外部链接（照片直播、报名表等），按排序值从小到大排列。</p>';
+
+  // Add form
+  html += '<div style="display:grid;grid-template-columns:1fr 2fr 60px 70px auto;gap:8px;margin-bottom:16px;align-items:center">';
+  html += '<input id="link-title" placeholder="标题" required>';
+  html += '<input id="link-url" placeholder="链接地址（https://...）" required>';
+  html += '<input id="link-icon" placeholder="图标" maxlength="4" style="text-align:center">';
+  html += '<input id="link-sort" type="number" placeholder="排序" value="0" style="text-align:center">';
+  html += '<button class="btn btn-primary" id="btn-add-link">添加</button>';
+  html += '</div>';
+
+  // List
+  if (links.length > 0) {
+    html += '<table><thead><tr><th>图标</th><th>标题</th><th>链接</th><th>排序</th><th>状态</th><th></th></tr></thead><tbody>';
+    links.forEach(l => {
+      const shortUrl = l.url.length > 40 ? l.url.substring(0,40)+'...' : l.url;
+      html += `<tr id="link-row-${l.id}">
+        <td style="font-size:1.2rem">${escapeHtml(l.icon || '🔗')}</td>
+        <td class="cell-name">${escapeHtml(l.title)}</td>
+        <td style="font-size:0.8rem;color:#666;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(l.url)}">${escapeHtml(shortUrl)}</td>
+        <td>${l.sort_order}</td>
+        <td><span class="badge ${l.active?'badge-open':'badge-full'}">${l.active?'启用':'停用'}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline link-edit-btn" data-id="${l.id}" data-title="${escapeHtml(l.title)}" data-url="${escapeHtml(l.url)}" data-icon="${escapeHtml(l.icon||'')}" data-sort="${l.sort_order}">编辑</button>
+          <button class="btn btn-sm btn-outline link-toggle-btn" data-id="${l.id}" data-active="${l.active}">${l.active?'停用':'启用'}</button>
+          <button class="btn btn-danger btn-sm link-del-btn" data-id="${l.id}" data-title="${escapeHtml(l.title)}">删除</button>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<p style="color:#999;text-align:center;padding:20px">暂未添加服务链接</p>';
+  }
+  html += '</div>';
+
+  el.innerHTML = html;
+
+  document.getElementById('btn-add-link')?.addEventListener('click', addLink);
+  document.querySelectorAll('.link-edit-btn').forEach(b => b.onclick = function() { startEditLink(this); });
+  document.querySelectorAll('.link-toggle-btn').forEach(b => b.onclick = () => toggleLink(b.dataset.id, b.dataset.active === '1'));
+  document.querySelectorAll('.link-del-btn').forEach(b => b.onclick = () => deleteLink(b.dataset.id, b.dataset.title));
+}
+
+async function addLink() {
+  const title = document.getElementById('link-title').value.trim();
+  const url = document.getElementById('link-url').value.trim();
+  const icon = document.getElementById('link-icon').value.trim();
+  const sort_order = parseInt(document.getElementById('link-sort').value) || 0;
+  if (!title || !url) return toast('请填写标题和链接', 'error');
+  try {
+    await api('/api/links', {method:'POST', body:JSON.stringify({title, url, icon, sort_order})});
+    toast('已添加');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function startEditLink(btn) {
+  const id = btn.dataset.id;
+  const row = document.getElementById('link-row-'+id);
+  row.innerHTML = `
+    <td><input id="elink-icon-${id}" value="${escapeHtml(btn.dataset.icon)}" style="width:40px;padding:4px;border:1px solid #2e86c1;border-radius:4px;text-align:center" maxlength="4"></td>
+    <td><input id="elink-title-${id}" value="${escapeHtml(btn.dataset.title)}" style="width:100%;padding:4px;border:1px solid #2e86c1;border-radius:4px"></td>
+    <td><input id="elink-url-${id}" value="${escapeHtml(btn.dataset.url)}" style="width:100%;padding:4px;border:1px solid #2e86c1;border-radius:4px"></td>
+    <td><input id="elink-sort-${id}" type="number" value="${btn.dataset.sort}" style="width:50px;padding:4px;border:1px solid #2e86c1;border-radius:4px;text-align:center"></td>
+    <td colspan="2">
+      <button class="btn btn-primary btn-sm save-link-btn" data-id="${id}">保存</button>
+      <button class="btn btn-sm btn-outline cancel-link-btn">取消</button>
+    </td>`;
+  row.querySelector('.save-link-btn').onclick = () => saveEditLink(id);
+  row.querySelector('.cancel-link-btn').onclick = () => loadContent();
+}
+
+async function saveEditLink(id) {
+  const title = document.getElementById('elink-title-'+id).value.trim();
+  const url = document.getElementById('elink-url-'+id).value.trim();
+  const icon = document.getElementById('elink-icon-'+id).value.trim();
+  const sort_order = parseInt(document.getElementById('elink-sort-'+id).value) || 0;
+  if (!title || !url) return toast('标题和链接不能为空', 'error');
+  try {
+    await api('/api/links/'+id, {method:'PUT', body:JSON.stringify({title, url, icon, sort_order})});
+    toast('已保存');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function toggleLink(id, currentlyActive) {
+  try {
+    await api('/api/links/'+id, {method:'PUT', body:JSON.stringify({active: currentlyActive ? 0 : 1})});
+    toast(currentlyActive ? '已停用' : '已启用');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function deleteLink(id, title) {
+  if (!confirm(`确定删除链接「${title}」？`)) return;
+  try {
+    await api('/api/links/'+id, {method:'DELETE'});
     toast('已删除');
     loadContent();
   } catch(e) { toast(e.message, 'error'); }

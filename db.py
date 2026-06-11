@@ -74,6 +74,18 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
+    # Service links table
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL,
+            icon TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
     conn.commit()
     conn.close()
 
@@ -145,6 +157,74 @@ def get_player_count(category: str) -> int:
     ).fetchone()
     conn.close()
     return row["cnt"]
+
+
+# ── Link CRUD ──
+
+def get_links(active_only: bool = False) -> list[dict]:
+    conn = get_db()
+    if active_only:
+        rows = conn.execute(
+            "SELECT * FROM links WHERE active=1 ORDER BY sort_order, id"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM links ORDER BY sort_order, id"
+        ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def add_link(title: str, url: str, icon: str = "", sort_order: int = 0) -> int:
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO links (title, url, icon, sort_order) VALUES (?, ?, ?, ?)",
+        (title, url, icon, sort_order),
+    )
+    conn.commit()
+    lid = cur.lastrowid
+    conn.close()
+    return lid
+
+
+def update_link(link_id: int, title: str = None, url: str = None,
+                icon: str = None, sort_order: int = None, active: int = None) -> bool:
+    conn = get_db()
+    fields = []
+    values = []
+    if title is not None:
+        fields.append("title=?")
+        values.append(title)
+    if url is not None:
+        fields.append("url=?")
+        values.append(url)
+    if icon is not None:
+        fields.append("icon=?")
+        values.append(icon)
+    if sort_order is not None:
+        fields.append("sort_order=?")
+        values.append(sort_order)
+    if active is not None:
+        fields.append("active=?")
+        values.append(active)
+    if not fields:
+        conn.close()
+        return False
+    values.append(link_id)
+    cur = conn.execute(f"UPDATE links SET {', '.join(fields)} WHERE id=?", values)
+    conn.commit()
+    updated = cur.rowcount > 0
+    conn.close()
+    return updated
+
+
+def delete_link(link_id: int) -> bool:
+    conn = get_db()
+    cur = conn.execute("DELETE FROM links WHERE id=?", (link_id,))
+    conn.commit()
+    deleted = cur.rowcount > 0
+    conn.close()
+    return deleted
 
 
 # ── Referee CRUD ──
