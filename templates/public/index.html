@@ -5,6 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>齐动力网球会员杯积分赛（端午站）</title>
 <link rel="stylesheet" href="/static/style.css">
+<style>
+  .service-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    padding: 20px 16px 8px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .service-link-card {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 20px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    text-decoration: none;
+    color: #333;
+    font-size: 0.95rem;
+    font-weight: 500;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .service-link-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .service-link-card .link-icon { font-size: 1.2rem; }
+</style>
 </head>
 <body>
 
@@ -23,6 +53,17 @@
   </a>
   {% endfor %}
 </div>
+
+{% if links %}
+<div class="service-links">
+  {% for link in links %}
+  <a href="{{ link.url }}" target="_blank" class="service-link-card">
+    <span class="link-icon">{{ link.icon or '🔗' }}</span>
+    <span class="link-title">{{ link.title }}</span>
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
 
 <div style="text-align:center;padding:24px;color:#aaa;font-size:0.85rem">
   <p>📱 扫码查看实时赛程与比分</p>
