@@ -7,17 +7,43 @@
 <link rel="stylesheet" href="/static/style.css">
 <style>
   .login-box {
-    max-width: 360px;
-    margin: 80px auto;
+    max-width: 380px;
+    margin: 60px auto;
     padding: 32px;
     background: #fff;
     border-radius: 12px;
     box-shadow: 0 4px 20px rgba(0,0,0,0.1);
     text-align: center;
   }
-  .login-box h2 { margin-bottom: 8px; }
+  .login-box h2 { margin-bottom: 4px; }
   .login-box .sub { color: #888; font-size: 0.85rem; margin-bottom: 24px; }
-  .login-box input {
+
+  /* Role selector cards */
+  .role-selector {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .role-card {
+    flex: 1;
+    padding: 16px 8px;
+    border: 2px solid #e0e0e0;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #fafafa;
+  }
+  .role-card:hover { border-color: #bbb; background: #f5f5f5; }
+  .role-card.active {
+    border-color: #2e86c1;
+    background: #eaf2f8;
+  }
+  .role-card .icon { font-size: 1.6rem; margin-bottom: 4px; }
+  .role-card .title { font-weight: 600; font-size: 0.95rem; color: #333; }
+  .role-card .desc { font-size: 0.75rem; color: #888; margin-top: 2px; }
+
+  /* Form fields */
+  .login-box input, .login-box select {
     width: 100%;
     padding: 12px;
     border: 1px solid #ddd;
@@ -25,8 +51,12 @@
     font-size: 1rem;
     margin-bottom: 12px;
     text-align: center;
+    box-sizing: border-box;
   }
-  .login-box input:focus { outline: none; border-color: #2e86c1; }
+  .login-box input:focus, .login-box select:focus {
+    outline: none;
+    border-color: #2e86c1;
+  }
   .login-box button {
     width: 100%;
     padding: 12px;
@@ -40,64 +70,122 @@
   }
   .login-box button:hover { background: #2471a3; }
   .error { color: #e74c3c; font-size: 0.85rem; margin-bottom: 12px; }
+  .hint { margin-top: 16px; font-size: 0.78rem; color: #aaa; }
+  .hint span { display: block; margin-top: 2px; }
 </style>
 </head>
 <body>
 
 <div class="login-box">
   <h2>🎾 齐动力网球会员杯</h2>
-  <p class="sub">管理后台 · 请输入密码</p>
+  <p class="sub">管理后台 · 请选择身份登录</p>
 
   {% if error %}
   <div class="error">{{ error }}</div>
   {% endif %}
+  <div class="error" id="js-error" style="display:none"></div>
+
+  <!-- Role selector -->
+  <div class="role-selector">
+    <div class="role-card active" data-role="admin" id="card-admin">
+      <div class="icon">🛡️</div>
+      <div class="title">管理员</div>
+      <div class="desc">全功能操作</div>
+    </div>
+    <div class="role-card" data-role="referee" id="card-referee">
+      <div class="icon">🎾</div>
+      <div class="title">裁判员</div>
+      <div class="desc">仅限记分</div>
+    </div>
+  </div>
 
   <form method="post" action="/admin/login" id="login-form">
-    <input type="password" name="password" id="password" placeholder="输入密码" autofocus>
+    <!-- Referee name: shown only in referee mode, above password -->
     <div id="referee-row" style="display:none">
-      <select name="referee_name" id="referee-select" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:1rem;margin-bottom:8px;text-align:center">
+      <select name="referee_name" id="referee-select">
         <option value="">— 选择你的姓名 —</option>
       </select>
     </div>
-    <button type="submit">登录</button>
+
+    <input type="password" name="password" id="password" placeholder="输入密码" autofocus>
+
+    <button type="submit">登 录</button>
   </form>
 
-  <p style="margin-top:16px;font-size:0.75rem;color:#aaa">
-    管理员密码：全功能 · 裁判员密码：仅记分
-  </p>
+  <div class="hint">
+    <span>🛡️ 管理员密码 → 球员管理、分组、记分等全部功能</span>
+    <span>🎾 裁判员密码 → 仅限比赛记分</span>
+  </div>
 </div>
 
 <script>
-// Load referee list on page load
+const cardAdmin = document.getElementById('card-admin');
+const cardReferee = document.getElementById('card-referee');
+const refereeRow = document.getElementById('referee-row');
+const refereeSelect = document.getElementById('referee-select');
+const passwordInput = document.getElementById('password');
+const loginForm = document.getElementById('login-form');
+const jsError = document.getElementById('js-error');
+
+let selectedRole = 'admin';
+
+function switchRole(role) {
+  selectedRole = role;
+  cardAdmin.classList.toggle('active', role === 'admin');
+  cardReferee.classList.toggle('active', role === 'referee');
+  refereeRow.style.display = role === 'referee' ? 'block' : 'none';
+
+  if (role === 'referee') {
+    refereeSelect.focus();
+  } else {
+    passwordInput.focus();
+  }
+}
+
+cardAdmin.addEventListener('click', () => switchRole('admin'));
+cardReferee.addEventListener('click', () => switchRole('referee'));
+
+// Load referee list
 fetch('/api/referees?active_only=true')
   .then(r => r.json())
   .then(referees => {
-    const sel = document.getElementById('referee-select');
     if (referees.length) {
       referees.forEach(r => {
         const opt = document.createElement('option');
         opt.value = r.name;
         opt.textContent = r.name;
-        sel.appendChild(opt);
+        refereeSelect.appendChild(opt);
       });
     } else {
       const opt = document.createElement('option');
       opt.value = '';
       opt.textContent = '暂无可用裁判员，请联系管理员添加';
       opt.disabled = true;
-      sel.appendChild(opt);
+      refereeSelect.appendChild(opt);
     }
   })
   .catch(() => {});
 
-// Show referee name row when password loses focus (not admin)
-document.getElementById('password').addEventListener('blur', function() {
-  // Show selector for any non-empty password — will show error if referee doesn't pick name
-  if (this.value) {
-    document.getElementById('referee-row').style.display = 'block';
+// Client-side validation before submit
+loginForm.addEventListener('submit', function(e) {
+  jsError.style.display = 'none';
+
+  if (selectedRole === 'referee' && !refereeSelect.value) {
+    e.preventDefault();
+    jsError.textContent = '请先选择你的姓名';
+    jsError.style.display = 'block';
+    refereeSelect.focus();
+    return;
+  }
+
+  if (!passwordInput.value) {
+    e.preventDefault();
+    jsError.textContent = '请输入密码';
+    jsError.style.display = 'block';
+    passwordInput.focus();
+    return;
   }
 });
-
 </script>
 
 </body>
