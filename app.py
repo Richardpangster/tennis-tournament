@@ -762,6 +762,8 @@ def api_add_link(data: LinkCreate, request: Request):
     url = data.url.strip()
     if not title or not url:
         raise HTTPException(400, "标题和链接不能为空")
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "链接必须以 http:// 或 https:// 开头")
     try:
         lid = db.add_link(title, url, data.icon.strip(), data.sort_order)
         return {"status": "ok", "id": lid}
@@ -778,6 +780,8 @@ def api_update_link(link_id: int, data: LinkUpdate, request: Request):
         raise HTTPException(400, "标题不能为空")
     if url is not None and not url:
         raise HTTPException(400, "链接不能为空")
+    if url is not None and not url.startswith(("http://", "https://")):
+        raise HTTPException(400, "链接必须以 http:// 或 https:// 开头")
     if not db.update_link(link_id, title=title, url=url, icon=data.icon,
                           sort_order=data.sort_order, active=data.active):
         raise HTTPException(404, "链接不存在")

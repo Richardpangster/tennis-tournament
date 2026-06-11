@@ -57,10 +57,12 @@
 {% if links %}
 <div class="service-links">
   {% for link in links %}
+  {% if link.url.startswith(('http://', 'https://')) %}
   <a href="{{ link.url }}" target="_blank" class="service-link-card">
     <span class="link-icon">{{ link.icon or '🔗' }}</span>
     <span class="link-title">{{ link.title }}</span>
   </a>
+  {% endif %}
   {% endfor %}
 </div>
 {% endif %}
