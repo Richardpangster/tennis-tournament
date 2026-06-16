@@ -94,14 +94,14 @@ function render(standings, matches) {
       }
       html += '</div>';
     });
+
+    // Knockout bracket — shown only after group draw
+    html += '<div class="section-title">🏆 淘汰赛对阵</div>';
+    html += renderBracket(koMatches, standings);
   }
 
-  // Knockout bracket — always visible
-  html += '<div class="section-title">🏆 淘汰赛对阵</div>';
-  html += renderBracket(koMatches, standings);
-
-  if (!hasGroup) {
-    html += '<div class="card" style="text-align:center;padding:20px;color:#999"><p>小组赛尚未开始，对阵图仅供参考</p></div>';
+  if (!hasGroup && !hasKO) {
+    html = '<div class="card" style="text-align:center;padding:40px;color:#999"><p>赛程尚未生成，请耐心等待</p></div>';
   }
 
   document.getElementById('content').innerHTML = html;
