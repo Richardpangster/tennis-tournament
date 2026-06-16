@@ -353,7 +353,7 @@ async function addPlayer() {
 }
 
 async function doDelete(id) {
-  if (!confirm('确定删除该球员？已有比赛记录将被一并清除。')) return;
+  if (!confirm('确定删除该球员？若该组别已抽签，则该组别全部赛程将被清除。')) return;
   try {
     await api('/api/players/'+id, {method:'DELETE'});
     toast('已删除');
