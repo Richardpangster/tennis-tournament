@@ -90,6 +90,18 @@ def init_db():
     conn.close()
 
 
+# ── Full reset ──
+
+def reset_all():
+    """Delete all players and matches. Used for fresh start between tournaments."""
+    conn = get_db()
+    conn.execute("DELETE FROM matches")
+    conn.execute("DELETE FROM players")
+    conn.execute("DELETE FROM sqlite_sequence WHERE name IN ('players', 'matches')")
+    conn.commit()
+    conn.close()
+
+
 # ── Player CRUD ──
 
 def add_player(name: str, phone: str, category: str, birth_date: str = None) -> int:
@@ -120,6 +132,8 @@ def get_players(category: str = None) -> list[dict]:
 
 def delete_player(player_id: int):
     conn = get_db()
+    # Delete related matches first to avoid FK constraint violation
+    conn.execute("DELETE FROM matches WHERE player1_id=? OR player2_id=?", (player_id, player_id))
     conn.execute("DELETE FROM players WHERE id=?", (player_id,))
     conn.commit()
     conn.close()

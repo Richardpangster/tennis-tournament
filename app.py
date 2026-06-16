@@ -686,6 +686,14 @@ def api_knockout(category: str):
 
 # ═══════════════ Clear API ═══════════════
 
+@app.post("/api/reset")
+def api_reset(request: Request):
+    """Delete all players and matches — fresh start."""
+    require_role(request, ["admin"])
+    db.reset_all()
+    return {"status": "ok"}
+
+
 @app.post("/api/clear/{category}")
 def api_clear(category: str, request: Request, stage: str = None):
     require_role(request, ["admin"])

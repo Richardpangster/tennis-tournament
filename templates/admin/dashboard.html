@@ -269,6 +269,7 @@ async function loadPlayers(el) {
   if (hasGroup) {
     html += `<button class="btn btn-danger btn-sm" id="btn-clear-groups">清除分组（重新抽签）</button>`;
   }
+  html += '<button class="btn btn-danger btn-sm" id="btn-reset-all" style="margin-left:auto">🗑 一键清空所有数据</button>';
   html += '</div>';
 
   // Player list
@@ -300,6 +301,7 @@ async function loadPlayers(el) {
   document.querySelectorAll('.import-file-cat-btn').forEach(b => b.onclick = () => doImportFile(b.dataset.cat));
   document.getElementById('btn-draw')?.addEventListener('click', doDraw);
   document.getElementById('btn-clear-groups')?.addEventListener('click', doClearGroups);
+  document.getElementById('btn-reset-all')?.addEventListener('click', doResetAll);
   document.querySelectorAll('.del-btn').forEach(b => b.onclick = () => doDelete(b.dataset.id));
   document.querySelectorAll('.edit-btn').forEach(b => b.onclick = function() { startEdit(this); });
 }
@@ -351,10 +353,12 @@ async function addPlayer() {
 }
 
 async function doDelete(id) {
-  if (!confirm('确定删除？')) return;
-  await api('/api/players/'+id, {method:'DELETE'});
-  toast('已删除');
-  loadContent();
+  if (!confirm('确定删除该球员？已有比赛记录将被一并清除。')) return;
+  try {
+    await api('/api/players/'+id, {method:'DELETE'});
+    toast('已删除');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function doDraw() {
@@ -375,6 +379,16 @@ async function doClearGroups() {
   await api('/api/clear/'+cat, {method:'POST'});
   toast('已清除');
   loadContent();
+}
+
+async function doResetAll() {
+  if (!confirm('确定清空所有组别的球员和比赛数据？\n\n此操作将删除全部球员、全部分组抽签和比赛记录，不可恢复！')) return;
+  if (!confirm('再次确认：真的要清空所有数据吗？')) return;
+  try {
+    await api('/api/reset', {method:'POST'});
+    toast('所有数据已清空');
+    loadContent();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 // ═══════════ Referee Management ═══════════
