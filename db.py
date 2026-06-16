@@ -90,6 +90,19 @@ def init_db():
     conn.close()
 
 
+# ── Full reset ──
+
+def reset_all():
+    """Delete all players and matches. Used for fresh start between tournaments.
+    Does NOT reset autoincrement counters — old browser tabs with stale match IDs
+    won't collide with new data after reset."""
+    conn = get_db()
+    conn.execute("DELETE FROM matches")
+    conn.execute("DELETE FROM players")
+    conn.commit()
+    conn.close()
+
+
 # ── Player CRUD ──
 
 def add_player(name: str, phone: str, category: str, birth_date: str = None) -> int:
@@ -119,7 +132,22 @@ def get_players(category: str = None) -> list[dict]:
 
 
 def delete_player(player_id: int):
+    """Delete a player. If the category has any drawn matches, clear the entire
+    category schedule first to keep it atomic — a partial schedule would corrupt
+    standings and knockout advancement."""
     conn = get_db()
+    # Find player's category
+    row = conn.execute("SELECT category FROM players WHERE id=?", (player_id,)).fetchone()
+    if not row:
+        conn.close()
+        return
+    cat = row["category"]
+    # If this category has matches, clear the whole schedule (atomic)
+    match_count = conn.execute(
+        "SELECT COUNT(*) as cnt FROM matches WHERE category=?", (cat,)
+    ).fetchone()["cnt"]
+    if match_count > 0:
+        conn.execute("DELETE FROM matches WHERE category=?", (cat,))
     conn.execute("DELETE FROM players WHERE id=?", (player_id,))
     conn.commit()
     conn.close()

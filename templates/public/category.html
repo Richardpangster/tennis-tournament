@@ -20,35 +20,10 @@
 const CAT = '{{ category }}';
 	const GROUP_NAMES = {{ group_names | tojson }};
 let countdown = 30;
-const isU8 = CAT === 'U8';
-
-function countPoints(points, player) { return points.filter(p => p === player).length; }
-function tennisDisplay(p1, p2) {
-  const nm = ['0', '15', '30', '40', '45'];
-  if (p1 >= 3 && p2 >= 3) {
-    if (p1 === p2) return '40-40';
-    if (p1 > p2) return '45-40';
-    if (p2 > p1) return '40-45';
-  }
-  return nm[Math.min(p1,4)] + '-' + nm[Math.min(p2,4)];
-}
 
 function formatPublicScore(m) {
   let text = `${m.score1}-${m.score2}`;
-  if (m.game_details) {
-    try {
-      const gd = JSON.parse(m.game_details);
-      const parts = gd.games.map(g => {
-        const p1c = countPoints(g.points, 'p1'), p2c = countPoints(g.points, 'p2');
-        return isU8 ? `${p1c}-${p2c}` : tennisDisplay(p1c, p2c);
-      });
-      if (gd.tiebreak && gd.tiebreak.points) {
-        const tp1 = countPoints(gd.tiebreak.points, 'p1'), tp2 = countPoints(gd.tiebreak.points, 'p2');
-        parts.push(`抢七 ${tp1}-${tp2}`);
-      }
-      if (!isU8) text += ` [${parts.join(', ')}]`;
-    } catch(e) {}
-  } else if (!isU8 && m.tb_score1 != null && m.tb_score2 != null) {
+  if (m.tb_score1 != null && m.tb_score2 != null) {
     text += ` (抢七 ${m.tb_score1}-${m.tb_score2})`;
   }
   return text;
@@ -121,22 +96,21 @@ function render(standings, matches) {
     });
   }
 
-  // Knockout
-  if (hasKO) {
-    html += '<div class="section-title">🏆 淘汰赛</div>';
-    html += renderBracket(koMatches);
-  }
+  // Knockout bracket — always visible
+  html += '<div class="section-title">🏆 淘汰赛对阵</div>';
+  html += renderBracket(koMatches, standings);
 
-  if (!hasGroup && !hasKO) {
-    html = '<div class="card" style="text-align:center;padding:40px;color:#999"><p>赛程尚未生成，请耐心等待</p></div>';
+  if (!hasGroup) {
+    html += '<div class="card" style="text-align:center;padding:20px;color:#999"><p>小组赛尚未开始，对阵图仅供参考</p></div>';
   }
 
   document.getElementById('content').innerHTML = html;
 }
 
-function renderBracket(matches) {
+function renderBracket(matches, standings) {
   const byStage = {};
   matches.forEach(m => { byStage[m.stage] = byStage[m.stage] || []; byStage[m.stage].push(m); });
+  const hasKO = matches.length > 0;
 
   let h = '<div class="card" style="overflow-x:auto"><table style="min-width:600px">';
 
@@ -145,43 +119,63 @@ function renderBracket(matches) {
     h += '<td colspan="2" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
     h += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
 
-    const qfs = (byStage['quarterfinal']||[]).sort((a,b)=>a.match_order-b.match_order);
-    const QF_LABELS = {1:'A1 vs C2', 2:'B1 vs D2', 3:'C1 vs A2', 4:'D1 vs B2'};
+    const QF_RULES = {1:'A1 vs C2', 2:'B1 vs D2', 3:'C1 vs A2', 4:'D1 vs B2'};
+    const qfs = hasKO ? (byStage['quarterfinal']||[]).sort((a,b)=>a.match_order-b.match_order) : [];
+
     for (let i = 0; i < 4; i++) {
       h += '<tr>';
-      const label = QF_LABELS[qfs[i].match_order] || '';
-      h += `<td colspan="4" style="border-right:2px solid #ddd">${renderPublicKO(qfs[i], label)}</td>`;
+      const rule = QF_RULES[i+1];
+      if (hasKO && qfs[i]) {
+        h += `<td colspan="4" style="border-right:2px solid #ddd">${renderPublicKO(qfs[i], rule)}</td>`;
+      } else {
+        h += `<td colspan="4" style="border-right:2px solid #ddd">${renderEmptySlot(rule)}</td>`;
+      }
       if (i < 2) {
-        const sf = (byStage['semifinal']||[]).find(m=>m.match_order===5);
-        if (i === 0) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf, '上半区'):'—'}</td>`;
+        const sf = hasKO ? (byStage['semifinal']||[]).find(m=>m.match_order===5) : null;
+        if (i === 0) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf,'上半区'):renderEmptySlot('QF1胜 vs QF2胜')}</td>`;
       }
       if (i >= 2) {
-        const sf = (byStage['semifinal']||[]).find(m=>m.match_order===6);
-        if (i === 2) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf, '下半区'):'—'}</td>`;
+        const sf = hasKO ? (byStage['semifinal']||[]).find(m=>m.match_order===6) : null;
+        if (i === 2) h += `<td rowspan="2" colspan="2" style="vertical-align:middle;border-right:2px solid #ddd">${sf?renderPublicKO(sf,'下半区'):renderEmptySlot('QF3胜 vs QF4胜')}</td>`;
       }
       if (i < 1) {
-        const fin = (byStage['final']||[])[0];
-        h += `<td rowspan="4" style="vertical-align:middle">${fin?renderPublicKO(fin):'—'}</td>`;
+        const fin = hasKO ? (byStage['final']||[])[0] : null;
+        h += `<td rowspan="4" style="vertical-align:middle">${fin?renderPublicKO(fin):renderEmptySlot('SF1胜 vs SF2胜')}</td>`;
       }
       h += '</tr>';
     }
   } else {
     h += '<tr><td colspan="4" style="text-align:center;font-weight:600;background:#eaf2f8">半决赛</td>';
     h += '<td style="text-align:center;font-weight:600;background:#fef9e7">决赛</td></tr>';
-    const sfs = (byStage['semifinal']||[]).sort((a,b)=>a.match_order-b.match_order);
-    const SF_LABELS = {1:'A1 vs B2', 2:'B1 vs A2'};
+    const SF_RULES = {1:'A1 vs B2', 2:'B1 vs A2'};
+    const sfs = hasKO ? (byStage['semifinal']||[]).sort((a,b)=>a.match_order-b.match_order) : [];
+
     for (let i = 0; i < 2; i++) {
       h += '<tr>';
-      h += `<td colspan="4" style="border-right:2px solid #ddd">${renderPublicKO(sfs[i], SF_LABELS[sfs[i].match_order]||'')}</td>`;
+      const rule = SF_RULES[i+1];
+      if (hasKO && sfs[i]) {
+        h += `<td colspan="4" style="border-right:2px solid #ddd">${renderPublicKO(sfs[i], rule)}</td>`;
+      } else {
+        h += `<td colspan="4" style="border-right:2px solid #ddd">${renderEmptySlot(rule)}</td>`;
+      }
       if (i < 1) {
-        const fin = (byStage['final']||[])[0];
-        h += `<td rowspan="2" style="vertical-align:middle">${fin?renderPublicKO(fin):'—'}</td>`;
+        const fin = hasKO ? (byStage['final']||[])[0] : null;
+        h += `<td rowspan="2" style="vertical-align:middle">${fin?renderPublicKO(fin):renderEmptySlot('SF1胜 vs SF2胜')}</td>`;
       }
       h += '</tr>';
     }
   }
   h += '</table></div>';
   return h;
+}
+
+function renderEmptySlot(rule) {
+  let s = '<div style="font-size:0.85rem;padding:8px 4px;text-align:center">';
+  s += `<div style="font-size:0.7rem;color:#aaa;margin-bottom:6px">${rule}</div>`;
+  s += '<div style="color:#ccc;padding:2px 0">—</div>';
+  s += '<div style="color:#ccc;padding:2px 0">—</div>';
+  s += '</div>';
+  return s;
 }
 
 function renderPublicKO(m, label) {
