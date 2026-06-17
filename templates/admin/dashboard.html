@@ -144,6 +144,22 @@ function isTiebreakNeeded(mid) {
 // ═══════════ Init ═══════════
 async function init() {
   renderCategoryTabs();
+  // Restore score state from localStorage (survives session timeout redirect)
+  // Uses a single key for all categories — match IDs are unique across categories
+  try {
+    const savedRaw = localStorage.getItem('scoreState');
+    if (savedRaw) {
+      const saved = JSON.parse(savedRaw);
+      for (const [mid, st] of Object.entries(saved)) {
+        if (st && st.games && st.tiebreak) {
+          scoreState[mid] = { games: st.games.map(g => [...g]), tiebreak: [...st.tiebreak] };
+        }
+      }
+    }
+  } catch(e) {}
+  // Periodic keepalive to prevent session timeout during scoring
+  // Must hit an authenticated endpoint; /health doesn't refresh session ts
+  setInterval(() => fetch('/api/ping'), 4 * 60 * 1000);
   await loadContent();
 }
 
@@ -178,6 +194,8 @@ function switchCategory() {
 async function api(url, opts={}) {
   const res = await fetch(url, {headers:{'Content-Type':'application/json'}, ...opts});
   if (res.status === 401) {
+    // Save score state to localStorage before redirecting to login
+    try { localStorage.setItem('scoreState', JSON.stringify(scoreState)); } catch(e) {}
     window.location.href = '/admin/login';
     throw new Error('登录已过期，请重新登录');
   }
@@ -1184,6 +1202,9 @@ async function quickSave(mid) {
     let text = `${s1}-${s2}`;
     if (tb1 != null) text += ` (抢七 ${tb1}-${tb2})`;
     if (resultEl) resultEl.innerHTML = `<span style="color:#27ae60;font-weight:600">✓ ${text}  → 已保存</span>`;
+    // Clear this match from localStorage after successful save
+    delete scoreState[mid];
+    try { localStorage.setItem('scoreState', JSON.stringify(scoreState)); } catch(e) {}
     // Refresh card to completed view
     setTimeout(() => loadContent(), 600);
     toast('已保存');

@@ -34,7 +34,7 @@ ADMIN_PASSWORD = os.getenv("TOURNAMENT_ADMIN_PW") or secrets.token_hex(4)
 REFEREE_PASSWORD = os.getenv("TOURNAMENT_REFEREE_PW") or secrets.token_hex(4)
 SESSION_SECRET = os.getenv("TOURNAMENT_SECRET") or secrets.token_hex(32)
 
-AUTH_TIMEOUT = 1800  # 30 minutes
+AUTH_TIMEOUT = 7200  # 2 hours (referees may spend a long time entering point-by-point scores)
 
 
 # ── Pydantic models ──
@@ -211,6 +211,13 @@ def public_home(request: Request):
 @app.get("/health")
 def health():
     """Simple health check - no DB, no template"""
+    return {"status": "ok"}
+
+
+@app.get("/api/ping")
+def api_ping(request: Request):
+    """Lightweight auth endpoint for session keepalive during score entry."""
+    check_auth(request)
     return {"status": "ok"}
 
 
