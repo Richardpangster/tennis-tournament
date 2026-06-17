@@ -214,6 +214,13 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/ping")
+def api_ping(request: Request):
+    """Lightweight auth endpoint for session keepalive during score entry."""
+    check_auth(request)
+    return {"status": "ok"}
+
+
 @app.get("/public/{category}", response_class=HTMLResponse)
 def public_category(request: Request, category: str):
     if category not in CATEGORIES:
